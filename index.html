@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>小小打包台</title>
+<meta name="description" content="拖箱子、包泡泡纸、戳泡泡的小游戏。离线可玩，不联网，不收集任何数据。">
+<meta name="theme-color" content="#7cc6ec">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="打包台">
+<meta name="format-detection" content="telephone=no">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+/*
+  小小打包台（儿童版）：拖箱子、包泡泡纸、戳泡泡，给孩子在平板上玩。
+  整页一个文件，不连任何服务器、没有外部链接、没有登录、不收集数据；只在本机记住「最多打包几个」和声音开关。
+  全屏画布 + 上面一排大按钮；支持几根手指同时拖箱子。
+*/
+:root {
+  --ink: #24323a;
+  --muted: #56707c;
+  --pill: rgba(255, 255, 255, .9);
+  --accent: #ff7a00;
+  color-scheme: light;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; touch-action: none;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-text-size-adjust: 100%;
+}
+body {
+  position: fixed; inset: 0;
+  background: linear-gradient(#a6dbf7 0%, #d6efff 55%, #f2faff 100%);
+  color: var(--ink);
+  font: 16px/1.4 "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+}
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+.hud {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 2;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  padding: max(12px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
+  pointer-events: none;
+}
+.score {
+  display: flex; align-items: center; gap: 8px; background: var(--pill); border-radius: 999px;
+  padding: 6px 18px 6px 12px; box-shadow: 0 3px 10px rgba(30, 80, 110, .16);
+  font-variant-numeric: tabular-nums;
+}
+.score .star { font-size: 28px; line-height: 1; }
+.score b { font-size: 30px; line-height: 1.1; font-weight: 800; min-width: 1ch; }
+.score small { font-size: 14px; color: var(--muted); margin-left: 4px; }
+.tools { display: flex; gap: 10px; }
+.tools button {
+  pointer-events: auto; width: 58px; height: 58px; border: 0; border-radius: 50%;
+  background: var(--pill); box-shadow: 0 3px 10px rgba(30, 80, 110, .16);
+  font-size: 28px; line-height: 1; display: grid; place-items: center; padding: 0; color: var(--ink);
+  cursor: pointer; transition: transform .12s ease;
+}
+.tools button:active { transform: scale(.9); }
+.tools button svg { width: 28px; height: 28px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.hint {
+  position: absolute; z-index: 1; left: 50%; transform: translateX(-50%);
+  top: calc(max(12px, env(safe-area-inset-top)) + 72px);
+  width: max-content; max-width: calc(100vw - 32px);
+  background: var(--pill); border-radius: 18px; padding: 8px 16px; text-align: center;
+  font-size: 17px; color: var(--ink); box-shadow: 0 3px 10px rgba(30, 80, 110, .12);
+  pointer-events: none; transition: opacity .8s ease;
+}
+.hint.gone { opacity: 0; }
+#safe { position: fixed; left: 0; bottom: 0; width: 1px; height: env(safe-area-inset-bottom, 0px); visibility: hidden; pointer-events: none; }
+
+@media (max-width: 560px) {
+  .tools button { width: 50px; height: 50px; font-size: 24px; }
+  .score b { font-size: 24px; }
+  .hint { font-size: 15px; top: calc(max(12px, env(safe-area-inset-top)) + 64px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tools button, .hint { transition: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="打包台小游戏：拖动、扔、叠箱子，点箱子包泡泡纸，点泡泡捏爆。"></canvas>
+
+<div class="hud">
+  <div class="score" aria-live="polite">
+    <span class="star" aria-hidden="true">⭐</span>
+    <b id="packed">0</b>
+    <small id="best-wrap" hidden>最多 <span id="best">0</span></small>
+  </div>
+  <div class="tools">
+    <button type="button" id="sweep" aria-label="换一批箱子">🧹</button>
+    <button type="button" id="sound" aria-label="声音" aria-pressed="true">🔊</button>
+    <button type="button" id="full" aria-label="全屏" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>
+      </svg>
+    </button>
+  </div>
+</div>
+<div class="hint" id="hint">拖一拖、扔一扔 · 点箱子包泡泡纸 · 戳破泡泡就打包好啦！</div>
+<div id="safe" aria-hidden="true"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var el = function (id) { return document.getElementById(id); };
+  var canvas = el("game"), ctx = canvas.getContext("2d");
+  var REDUCED = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var STANDALONE = !!(window.matchMedia && (window.matchMedia("(display-mode: fullscreen)").matches ||
+    window.matchMedia("(display-mode: standalone)").matches)) || window.navigator.standalone === true;
+
+  // ---------------------------------------------------------------- 本机小存储（存不了也照样玩） ----
+  function load(key) { try { return window.localStorage.getItem(key); } catch (e) { return null; } }
+  function save(key, value) { try { window.localStorage.setItem(key, value); } catch (e) { /* 不影响玩 */ } }
+
+  // ---------------------------------------------------------------- 素材 ----
+  // 箱子上贴的是图案贴纸（小朋友不用认字）；颜色有牛皮纸和几种糖果色。
+  var STICKERS = [["🧸", "#ff6b6b"], ["🚗", "#4d96ff"], ["🦖", "#2bb673"], ["🍎", "#e63946"], ["🎈", "#ff8fab"],
+    ["⚽", "#444444"], ["🐶", "#c77d3a"], ["🐱", "#f4a261"], ["🦄", "#b980f0"], ["🚀", "#5465ff"],
+    ["🍓", "#ef476f"], ["🐟", "#118ab2"], ["🌈", "#ffb703"], ["🎁", "#d62828"], ["🐼", "#555555"], ["🍌", "#e9c46a"]];
+  var PAPERS = [
+    { body: "#c9a06b", top: "#b88c57", tape: "#e3c28f", edge: "#8f6a3e" },
+    { body: "#ffb3c7", top: "#f597b2", tape: "#ffe0ea", edge: "#c76b88" },
+    { body: "#9fd3ff", top: "#7fc0f5", tape: "#d8eeff", edge: "#4f8fc4" },
+    { body: "#a8e6b5", top: "#87d499", tape: "#dcf5e2", edge: "#4d9d62" },
+    { body: "#ffe08a", top: "#f7cd5f", tape: "#fff3c9", edge: "#bf9b2e" },
+    { body: "#d3b8ff", top: "#bc98f7", tape: "#ede3ff", edge: "#8c69c9" }
+  ];
+  var CONFETTI = ["#ff6b6b", "#ffd166", "#06d6a0", "#4d96ff", "#b980f0", "#ff8fab"];
+  var POPS = ["啪", "啵", "噗"];
+  var SIZES = [[60, 46], [76, 56], [96, 66], [70, 70], [110, 52], [84, 62]];
+  var EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+  var FONT = getComputedStyle(document.body).fontFamily;
+
+  // ---------------------------------------------------------------- 状态 ----
+  var W = 0, H = 0, DPR = 1, FLOOR = 0, K = 1, MAX_BOXES = 10;
+  var boxes = [], bits = [], floats = [], cheer = null;
+  var drags = {};                       // 每根手指一个：pointerId → 正在拖的箱子
+  var packed = 0, best = Number(load("kids-pack-best")) || 0, lastSpawn = 0, hintGone = false;
+  var soundOn = load("kids-pack-sound") !== "off", audio = null;
+
+  function clamp(v, a, z) { return Math.max(a, Math.min(z, v)); }
+  function pick(list) { return list[Math.floor(Math.random() * list.length)]; }
+  function liveCount() { var n = 0; boxes.forEach(function (b) { if (!b.leaving) n++; }); return n; }
+
+  function showScore() {
+    el("packed").textContent = packed;
+    if (best) { el("best-wrap").hidden = false; el("best").textContent = best; }
+  }
+
+  function resize() {
+    var rect = canvas.getBoundingClientRect();
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = rect.width; H = rect.height;
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // 平板屏幕大，箱子、泡泡跟着放大，手指好点。已经在台上的箱子保持原来的大小。
+    K = clamp(Math.min(W, H) / 520, 0.8, 1.7);
+    FLOOR = H - Math.round(44 * K) - (el("safe").offsetHeight || 0);
+    MAX_BOXES = W * H > 500000 ? 12 : 9;
+    boxes.forEach(function (b) { b.x = clamp(b.x, 0, Math.max(0, W - b.w)); b.y = Math.min(b.y, FLOOR - b.h); });
+  }
+
+  function spawn(centerX) {
+    if (liveCount() >= MAX_BOXES) return;
+    var s = pick(SIZES), w = Math.round(s[0] * K), h = Math.round(s[1] * K), st = pick(STICKERS);
+    var x = centerX != null ? clamp(centerX - w / 2, 0, Math.max(0, W - w)) : 20 + Math.random() * Math.max(10, W - w - 40);
+    boxes.push({ x: x, y: -h - Math.random() * 60 * K, w: w, h: h, vx: (Math.random() - 0.5) * 120 * K, vy: 0,
+      tilt: 0, squash: 0, emoji: st[0], sticker: st[1], paper: Math.random() < 0.4 ? PAPERS[0] : pick(PAPERS.slice(1)),
+      wrap: null, leaving: 0, dir: 1, done: false, drag: null, grounded: false, py: 0 });
+  }
+
+  function bubbleGrid(b) {
+    // 泡泡大一点、少一点：一个箱子大约 6–12 个。
+    var r = Math.max(6, Math.min(9 * K, b.w / 8)), gap = r * 2.25, list = [];
+    for (var y = r + 3; y < b.h - r; y += gap) {
+      var offset = (Math.round(y / gap) % 2) * r;
+      for (var x = r + 3 + offset; x < b.w - r; x += gap) list.push({ x: x, y: y, r: r, popped: false });
+    }
+    if (!list.length) list.push({ x: b.w / 2, y: b.h / 2, r: r, popped: false });
+    return list;
+  }
+
+  function hit(px, py) {
+    var pad = 6 * K; // 手指比鼠标粗，箱子周围留一点余量
+    for (var i = boxes.length - 1; i >= 0; i--) {
+      var b = boxes[i];
+      if (!b.leaving && !b.done && px >= b.x - pad && px <= b.x + b.w + pad && py >= b.y - pad && py <= b.y + b.h + pad) return b;
+    }
+    return null;
+  }
+
+  function point(event) {
+    var rect = canvas.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top, t: performance.now() };
+  }
+
+  // ---------------------------------------------------------------- 手指 / 鼠标 ----
+  canvas.addEventListener("pointerdown", function (event) {
+    event.preventDefault();
+    unlockAudio();
+    var p = point(event), b = hit(p.x, p.y);
+    if (!b) { spawn(p.x); return; }   // 点空的地方：掉下来一箱
+    if (b.drag) return;               // 这个箱子已经被另一根手指拿着
+    try { canvas.setPointerCapture(event.pointerId); } catch (e) { /* 老浏览器 */ }
+    boxes.splice(boxes.indexOf(b), 1); boxes.push(b);   // 拿起来的放最上层
+    var d = { box: b, dx: p.x - b.x, dy: p.y - b.y, start: p, last: p, vx: 0, vy: 0, moved: false };
+    drags[event.pointerId] = d; b.drag = d;
+  }, { passive: false });
+
+  canvas.addEventListener("pointermove", function (event) {
+    var d = drags[event.pointerId];
+    if (!d) return;
+    var p = point(event), dt = Math.max(1, p.t - d.last.t) / 1000;
+    d.vx = d.vx * 0.4 + ((p.x - d.last.x) / dt) * 0.6;
+    d.vy = d.vy * 0.4 + ((p.y - d.last.y) / dt) * 0.6;
+    if (Math.abs(p.x - d.start.x) + Math.abs(p.y - d.start.y) > 10 * K) d.moved = true;
+    d.last = p;
+  });
+
+  function release(event, cancelled) {
+    var d = drags[event.pointerId];
+    if (!d) return;
+    delete drags[event.pointerId];
+    var b = d.box, p = point(event);
+    b.drag = null;
+    if (b.leaving) return;
+    if (!cancelled && !d.moved && p.t - d.start.t < 450) tap(b, p);
+    else { b.vx = clamp(d.vx, -1800 * K, 1800 * K); b.vy = clamp(d.vy, -1800 * K, 1200 * K); }
+  }
+  canvas.addEventListener("pointerup", function (event) { release(event, false); });
+  canvas.addEventListener("pointercancel", function (event) { release(event, true); });
+
+  function tap(b, p) {
+    if (!b.wrap) {
+      b.wrap = bubbleGrid(b);
+      b.squash = 0.12;
+      sound("wrap");
+      return;
+    }
+    var lx = p.x - b.x, ly = p.y - b.y, target = null, bestD = Infinity;
+    b.wrap.forEach(function (bubble) {
+      if (bubble.popped) return;
+      var d = (bubble.x - lx) * (bubble.x - lx) + (bubble.y - ly) * (bubble.y - ly);
+      if (d < bestD) { bestD = d; target = bubble; }
+    });
+    if (!target) return;
+    target.popped = true;
+    pop(b.x + target.x, b.y + target.y, target.r);
+    if (b.wrap.every(function (bubble) { return bubble.popped; })) finish(b);
+  }
+
+  function pop(x, y, r) {
+    sound("pop");
+    floats.push({ x: x, y: y - r, life: 0.7, text: pick(POPS) });
+    if (REDUCED) return;
+    for (var i = 0; i < 8; i++) {
+      var a = Math.random() * Math.PI * 2, v = (80 + Math.random() * 140) * K;
+      bits.push({ x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60 * K, life: 0.45 + Math.random() * 0.2,
+        color: "rgba(170,215,238,.95)", s: 2.6 * K, square: false });
+    }
+  }
+
+  function confetti(x, y, count, power) {
+    if (REDUCED) return;
+    for (var i = 0; i < count; i++) {
+      var a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2, v = (power * 0.5 + Math.random() * power) * K;
+      bits.push({ x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.9 + Math.random() * 0.7,
+        color: pick(CONFETTI), s: (3 + Math.random() * 3) * K, square: true });
+    }
+  }
+
+  function finish(b) {
+    b.done = true;
+    sound("done");
+    floats.push({ x: b.x + b.w / 2, y: b.y - 8 * K, life: 1.2, text: "打包好了！", strong: true });
+    confetti(b.x + b.w / 2, b.y, 26, 380);
+    setTimeout(function () { b.leaving = 1; b.dir = 1; }, REDUCED ? 120 : 650);
+  }
+
+  function packedOne() {
+    packed++;
+    if (packed > best) { best = packed; save("kids-pack-best", String(best)); }
+    showScore();
+    if (!hintGone) { hintGone = true; el("hint").classList.add("gone"); }
+    if (packed % 10 === 0) {
+      cheer = { life: 2.4, total: 2.4, text: "太棒了！🎉", sub: "已经打包 " + packed + " 个" };
+      sound("cheer");
+      for (var i = 0; i < 6; i++) confetti(W * (0.1 + i * 0.16), H * 0.55, 22, 620);
+    }
+  }
+
+  // 🧹：台上没打包的箱子都扫到左边，再掉下来一批新的。
+  function sweep() {
+    drags = {};
+    boxes.forEach(function (b) { b.drag = null; if (!b.leaving && !b.done) { b.leaving = 1; b.dir = -1; b.vx = -200 * K; } });
+    sound("sweep");
+    setTimeout(function () { for (var i = 0; i < 5; i++) spawn(W * (0.12 + i * 0.19)); lastSpawn = performance.now(); }, 450);
+  }
+
+  // ---------------------------------------------------------------- 物理 ----
+  // 箱子都是不转的长方形。为了放着不动时不抖：
+  // 1. 左右相撞只把两个箱子推开、速度取平均（不反弹）；
+  // 2. 上下按「从最低的箱子开始」一个个落位，每个箱子正好坐在地面或下面那个箱子的顶上，落稳就把竖直速度清零；
+  // 3. 慢到几乎不动的就停住；画的时候对齐到整像素。倾斜和压扁只是画出来的手感，静止时都是 0。
+  function overlapX(a, b) { return Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x); }
+  function overlapY(a, b) { return Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y); }
+  // a 上一帧在 b 上方（a 的底不低于 b 的顶）：这两个是上下叠的关系，不算左右相撞。
+  function wasAbove(a, b) { return a.py + a.h <= b.py + 6 * K; }
+
+  function step(dt) {
+    var now = performance.now();
+    if (now - lastSpawn > 3800 && liveCount() < Math.min(7, MAX_BOXES)) { spawn(); lastSpawn = now; }
+    var live = boxes.filter(function (b) { return !b.leaving; });
+    var gravity = 2100 * K;
+    live.forEach(function (b) { b.py = b.y; });
+
+    boxes.forEach(function (b) {
+      if (b.leaving) {
+        b.vx += 2600 * K * dt * b.dir; b.vy = Math.min(b.vy, 0) - 300 * K * dt;
+        b.x += b.vx * dt; b.y += b.vy * dt; b.tilt = clamp(b.tilt + dt * 2 * b.dir, -0.5, 0.5);
+        return;
+      }
+      if (b.drag) {
+        var d = b.drag, tx = d.last.x - d.dx, ty = d.last.y - d.dy;
+        b.vx = (tx - b.x) / Math.max(dt, 1 / 120); b.vy = (ty - b.y) / Math.max(dt, 1 / 120);
+        b.x += (tx - b.x) * 0.6; b.y += (ty - b.y) * 0.6;
+        b.tilt += (clamp(d.vx / 3000, -0.35, 0.35) - b.tilt) * 0.2;
+      } else {
+        b.vy += gravity * dt;
+        b.vx *= b.grounded ? Math.pow(0.02, dt) : Math.pow(0.7, dt);
+        if (b.grounded && Math.abs(b.vx) < 6) b.vx = 0;
+        b.x += b.vx * dt; b.y += b.vy * dt;
+        var lean = Math.abs(b.vx) > 40 ? clamp(b.vx / 4000, -0.2, 0.2) : 0;
+        b.tilt += (lean - b.tilt) * 0.2;
+        if (Math.abs(b.tilt) < 0.002) b.tilt = 0;
+      }
+      if (b.x < 0) { b.x = 0; b.vx = Math.abs(b.vx) * 0.3; }
+      if (b.x + b.w > W) { b.x = W - b.w; b.vx = -Math.abs(b.vx) * 0.3; }
+      if (b.y < -400 * K) b.y = -400 * K;
+      if (b.y + b.h > FLOOR && b.drag) b.y = FLOOR - b.h;
+      b.squash *= 0.82;
+      if (b.squash < 0.004) b.squash = 0;
+    });
+
+    // 左右相撞：推开，不反弹。拿在手里的箱子不动，被它推的那个让开。
+    for (var pass = 0; pass < 3; pass++) {
+      for (var i = 0; i < live.length; i++) {
+        for (var j = i + 1; j < live.length; j++) {
+          var a = live[i], c = live[j];
+          if (wasAbove(a, c) || wasAbove(c, a)) continue;
+          var ox = overlapX(a, c);
+          if (ox <= 0 || overlapY(a, c) <= 1) continue;
+          if (a.drag && c.drag) continue;
+          var dir = a.x + a.w / 2 < c.x + c.w / 2 ? -1 : 1;
+          var wa = a.drag ? 0 : c.drag ? 1 : 0.5;
+          a.x += dir * ox * wa; c.x -= dir * ox * (1 - wa);
+          var avg = (a.vx + c.vx) / 2;
+          if (!a.drag) a.vx = avg * 0.6;
+          if (!c.drag) c.vx = avg * 0.6;
+        }
+      }
+    }
+
+    // 上下：从最低的箱子开始落位，每个箱子坐在地面或下面已经落好的箱子顶上。
+    var order = live.slice().sort(function (p, q) { return (q.y + q.h) - (p.y + p.h); });
+    order.forEach(function (b) {
+      if (b.drag) { b.grounded = false; return; }
+      var support = FLOOR, under = null;
+      live.forEach(function (o) {
+        if (o === b || overlapX(b, o) <= 1 || !wasAbove(b, o)) return;
+        if (o.y < support) { support = o.y; under = o; }
+      });
+      if (b.y + b.h >= support - 0.5) {
+        if (b.vy > 600 * K) { b.squash = Math.min(0.16, b.vy / (9000 * K)); if (b.vy > 900 * K) sound("thud"); }
+        b.y = support - b.h;
+        b.vy = b.vy > 700 * K && !under ? -b.vy * 0.18 : 0;
+        b.grounded = b.vy === 0;
+        // 坐在别的箱子上：跟着下面那个一起走（被拖着走时上面的也跟着动一点）。
+        if (under && Math.abs(under.vx) > Math.abs(b.vx)) b.vx += (under.vx - b.vx) * 0.3;
+      } else {
+        b.grounded = false;
+      }
+    });
+
+    boxes = boxes.filter(function (b) {
+      if (!b.leaving) return true;
+      if (b.dir > 0 && b.x > W + 40) { packedOne(); return false; }
+      if (b.dir < 0 && b.x + b.w < -40) return false;
+      return b.y + b.h > -600;
+    });
+    bits = bits.filter(function (p) { p.life -= dt; p.vy += 900 * K * dt; p.x += p.vx * dt; p.y += p.vy * dt; return p.life > 0; });
+    floats = floats.filter(function (f) { f.life -= dt; f.y -= 40 * K * dt; return f.life > 0; });
+    if (cheer) { cheer.life -= dt; if (cheer.life <= 0) cheer = null; }
+  }
+
+  // ---------------------------------------------------------------- 画 ----
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    drawBench();
+    boxes.forEach(drawBox);
+    bits.forEach(function (p) {
+      ctx.globalAlpha = clamp(p.life * 2, 0, 1); ctx.fillStyle = p.color;
+      if (p.square) ctx.fillRect(p.x - p.s / 2, p.y - p.s / 2, p.s, p.s * 0.6);
+      else { ctx.beginPath(); ctx.arc(p.x, p.y, p.s, 0, Math.PI * 2); ctx.fill(); }
+    });
+    ctx.globalAlpha = 1;
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round";
+    floats.forEach(function (f) {
+      ctx.globalAlpha = Math.min(1, f.life * 2);
+      ctx.font = (f.strong ? "800 " + Math.round(20 * K) : "700 " + Math.round(16 * K)) + "px " + FONT;
+      ctx.lineWidth = 4 * K; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.strokeText(f.text, f.x, f.y);
+      ctx.fillStyle = f.strong ? "#1f9d55" : "#24323a"; ctx.fillText(f.text, f.x, f.y);
+    });
+    ctx.globalAlpha = 1;
+    if (!liveCount()) {
+      ctx.fillStyle = "#56707c"; ctx.font = "600 " + Math.round(20 * K) + "px " + FONT;
+      ctx.fillText("点一下，来一箱 📦", W / 2, FLOOR / 2);
+    }
+    if (cheer) drawCheer();
+  }
+
+  function drawBench() {
+    var top = Math.round(10 * K);
+    ctx.fillStyle = "#e3ad72"; ctx.fillRect(0, FLOOR, W, top);
+    ctx.fillStyle = "#c98d55"; ctx.fillRect(0, FLOOR + top, W, H - FLOOR - top);
+    ctx.fillStyle = "rgba(0,0,0,.12)";
+    for (var gx = 0; gx < W; gx += Math.round(70 * K)) ctx.fillRect(gx, FLOOR + top, 1, H - FLOOR - top);
+    // 台面上往右的小箭头：打包好的箱子往这边送走
+    ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.font = "700 " + Math.round(16 * K) + "px " + FONT;
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.fillText("› › ›", W - 70 * K, FLOOR + top + (H - FLOOR - top) / 2);
+    // 右边的小货车
+    ctx.font = Math.round(46 * K) + "px " + EMOJI_FONT; ctx.textBaseline = "alphabetic";
+    ctx.fillText("🚚", W - 8 * K, FLOOR - 2 * K);
+  }
+
+  function drawBox(b) {
+    var p = b.paper, r = 5 * K;
+    ctx.save();
+    // 对齐到屏幕的整像素，静止的箱子不会因为小数位置看起来发虚、闪。
+    ctx.translate(Math.round((b.x + b.w / 2) * DPR) / DPR, Math.round((b.y + b.h) * DPR) / DPR);
+    ctx.rotate(b.tilt);
+    ctx.scale(1 + b.squash, 1 - b.squash);
+    ctx.translate(-b.w / 2, -b.h);
+    // 纸箱
+    ctx.fillStyle = "rgba(0,0,0,.13)"; roundRect(3 * K, 4 * K, b.w, b.h, r); ctx.fill();
+    ctx.fillStyle = p.body; roundRect(0, 0, b.w, b.h, r); ctx.fill();
+    ctx.save(); roundRect(0, 0, b.w, b.h, r); ctx.clip();
+    ctx.fillStyle = p.top; ctx.fillRect(0, 0, b.w, b.h * 0.22);
+    ctx.fillStyle = p.tape; ctx.fillRect(b.w / 2 - 6 * K, 0, 12 * K, b.h * 0.42); // 封箱胶带
+    ctx.restore();
+    ctx.strokeStyle = p.edge; ctx.lineWidth = 1.5; roundRect(0.75, 0.75, b.w - 1.5, b.h - 1.5, r); ctx.stroke();
+    // 图案贴纸
+    var lh = Math.min(b.h * 0.42, 28 * K), lw = lh * 1.2, lx = 6 * K, ly = b.h - lh - 6 * K;
+    ctx.fillStyle = "#fffdf8"; roundRect(lx, ly, lw, lh, 3 * K); ctx.fill();
+    ctx.strokeStyle = b.sticker; ctx.lineWidth = 2 * K; roundRect(lx, ly, lw, lh, 3 * K); ctx.stroke();
+    ctx.font = Math.round(lh * 0.72) + "px " + EMOJI_FONT; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#000"; ctx.fillText(b.emoji, lx + lw / 2, ly + lh / 2 + lh * 0.04);
+    drawFace(b);
+    // 泡泡纸
+    if (b.wrap) {
+      ctx.fillStyle = "rgba(205,232,244,.5)"; roundRect(0, 0, b.w, b.h, r); ctx.fill();
+      b.wrap.forEach(function (bubble) {
+        ctx.beginPath(); ctx.arc(bubble.x, bubble.y, bubble.r, 0, Math.PI * 2);
+        if (bubble.popped) {
+          ctx.strokeStyle = "rgba(120,160,180,.45)"; ctx.lineWidth = 1; ctx.stroke();
+        } else {
+          ctx.fillStyle = "rgba(255,255,255,.72)"; ctx.fill();
+          ctx.strokeStyle = "rgba(110,160,185,.85)"; ctx.lineWidth = 1.2; ctx.stroke();
+          ctx.fillStyle = "rgba(255,255,255,.95)";
+          ctx.beginPath(); ctx.arc(bubble.x - bubble.r * 0.35, bubble.y - bubble.r * 0.35, bubble.r * 0.28, 0, Math.PI * 2); ctx.fill();
+        }
+      });
+    }
+    if (b.done) {
+      ctx.strokeStyle = "#1f9d55"; ctx.lineWidth = 3 * K; roundRect(3 * K, 3 * K, b.w - 6 * K, b.h - 6 * K, r); ctx.stroke();
+      var cr = 11 * K, cx = b.w - 4 * K, cy = 4 * K;
+      ctx.fillStyle = "#1f9d55"; ctx.beginPath(); ctx.arc(cx, cy, cr, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.6 * K; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.beginPath(); ctx.moveTo(cx - cr * 0.45, cy); ctx.lineTo(cx - cr * 0.1, cy + cr * 0.38); ctx.lineTo(cx + cr * 0.5, cy - cr * 0.35); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 箱子上的小脸：平时笑，被拿起来「哦」，打包好了眯眼笑。
+  function drawFace(b) {
+    var fx = b.w * 0.68, fy = b.h * 0.5, e = Math.max(5, 7 * K), er = Math.max(1.8, 2.4 * K);
+    ctx.fillStyle = "rgba(255,120,140,.35)";
+    ctx.beginPath(); ctx.arc(fx - e - 4 * K, fy + 5 * K, 3.2 * K, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(fx + e + 4 * K, fy + 5 * K, 3.2 * K, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = ctx.strokeStyle = "#3a2a1a"; ctx.lineWidth = Math.max(1.5, 1.8 * K); ctx.lineCap = "round";
+    [-1, 1].forEach(function (s) {
+      ctx.beginPath();
+      if (b.done) { ctx.arc(fx + s * e, fy + er, er * 1.5, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
+      else { ctx.arc(fx + s * e, fy, er, 0, Math.PI * 2); ctx.fill(); }
+    });
+    ctx.beginPath();
+    if (b.drag) { ctx.arc(fx, fy + 6 * K, 2.6 * K, 0, Math.PI * 2); ctx.stroke(); }
+    else { var m = b.done ? 5 * K : 3.6 * K; ctx.arc(fx, fy + 2.5 * K, m, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke(); }
+  }
+
+  function drawCheer() {
+    var t = 1 - cheer.life / cheer.total, s = REDUCED ? 1 : Math.min(1, 0.55 + t * 5);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, cheer.life * 2);
+    ctx.translate(W / 2, H * 0.36); ctx.scale(s, s);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
+    ctx.font = "800 " + Math.round(48 * K) + "px " + FONT;
+    ctx.lineWidth = 10 * K; ctx.strokeStyle = "#fff"; ctx.strokeText(cheer.text, 0, 0);
+    ctx.fillStyle = "#ff7a00"; ctx.fillText(cheer.text, 0, 0);
+    ctx.font = "700 " + Math.round(22 * K) + "px " + FONT;
+    ctx.lineWidth = 6 * K; ctx.strokeText(cheer.sub, 0, 44 * K);
+    ctx.fillStyle = "#24323a"; ctx.fillText(cheer.sub, 0, 44 * K);
+    ctx.restore();
+  }
+
+  // ---------------------------------------------------------------- 声音（浏览器自己合成，不加载文件） ----
+  function unlockAudio() {
+    if (!soundOn) return;
+    if (!audio) {
+      try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; return; }
+    }
+    if (audio.state === "suspended" && audio.resume) audio.resume();
+  }
+  function tone(type, from, to, length, volume, delay) {
+    var t = audio.currentTime + (delay || 0), osc = audio.createOscillator(), gain = audio.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(from, t);
+    osc.frequency.exponentialRampToValueAtTime(to, t + length);
+    gain.gain.setValueAtTime(volume, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + length);
+    osc.connect(gain); gain.connect(audio.destination);
+    osc.start(t); osc.stop(t + length + 0.02);
+  }
+  function sound(kind) {
+    if (!soundOn || !audio || audio.state !== "running") return;
+    if (kind === "pop") tone("triangle", 700 + Math.random() * 400, 220, 0.06, 0.18);
+    else if (kind === "wrap") tone("sine", 300, 500, 0.12, 0.08);
+    else if (kind === "done") { tone("sine", 520, 1040, 0.22, 0.12); }
+    else if (kind === "thud") tone("sine", 120, 60, 0.12, 0.2);
+    else if (kind === "sweep") tone("sawtooth", 500, 120, 0.25, 0.04);
+    else if (kind === "cheer") { tone("triangle", 523, 523, 0.16, 0.14); tone("triangle", 659, 659, 0.16, 0.14, 0.14); tone("triangle", 784, 1046, 0.34, 0.14, 0.28); }
+  }
+
+  // ---------------------------------------------------------------- 按钮 ----
+  function showSound() {
+    var b = el("sound");
+    b.textContent = soundOn ? "🔊" : "🔇";
+    b.setAttribute("aria-pressed", String(soundOn));
+    b.setAttribute("aria-label", soundOn ? "声音：开" : "声音：关");
+  }
+  el("sound").addEventListener("click", function () {
+    soundOn = !soundOn;
+    save("kids-pack-sound", soundOn ? "on" : "off");
+    showSound();
+    unlockAudio();
+    if (soundOn) setTimeout(function () { sound("pop"); }, 30);
+  });
+  el("sweep").addEventListener("click", function () { unlockAudio(); sweep(); });
+
+  // 全屏按钮：从主屏幕图标打开时本来就是全屏，不显示；浏览器里能全屏才显示。
+  var root = document.documentElement;
+  var canFull = !STANDALONE && !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  if (canFull) {
+    el("full").hidden = false;
+    el("full").addEventListener("click", function () {
+      var inFull = document.fullscreenElement || document.webkitFullscreenElement;
+      try {
+        if (inFull) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        else (root.requestFullscreen || root.webkitRequestFullscreen).call(root);
+      } catch (e) { /* 不支持就算了 */ }
+    });
+  }
+
+  // ---------------------------------------------------------------- 别让页面被缩放、滚动、长按弹菜单 ----
+  ["gesturestart", "gesturechange", "gestureend"].forEach(function (type) {
+    document.addEventListener(type, function (event) { event.preventDefault(); }, { passive: false });
+  });
+  document.addEventListener("touchmove", function (event) { event.preventDefault(); }, { passive: false });
+  document.addEventListener("dblclick", function (event) { event.preventDefault(); }, { passive: false });
+  document.addEventListener("contextmenu", function (event) { event.preventDefault(); });
+  document.addEventListener("touchend", unlockAudio, { passive: true }); // iPad 上声音要在手指抬起时解锁
+
+  // ---------------------------------------------------------------- 开始 ----
+  var last = performance.now();
+  function frame(now) {
+    var dt = Math.min(0.033, Math.max(0, (now - last) / 1000));
+    last = now;
+    step(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  showScore();
+  showSound();
+  resize();
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", function () { setTimeout(resize, 200); });
+  for (var i = 0; i < 5; i++) spawn(W * (0.12 + i * 0.19));
+  lastSpawn = performance.now();
+  requestAnimationFrame(frame);
+
+  // 离线可用：装到主屏幕以后，没网也能打开。（直接双击打开本地文件时不需要。）
+  if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () { /* 没有也能玩 */ }); });
+  }
+})();
+</script>
+</body>
+</html>

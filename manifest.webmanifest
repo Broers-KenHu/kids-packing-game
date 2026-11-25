@@ -1,0 +1,19 @@
+{
+  "name": "小小打包台",
+  "short_name": "打包台",
+  "description": "拖箱子、包泡泡纸、戳泡泡的小游戏。离线可玩，不联网，不收集任何数据。",
+  "lang": "zh-CN",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#bfe6fb",
+  "theme_color": "#7cc6ec",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
