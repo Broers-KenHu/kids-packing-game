@@ -1,7 +1,7 @@
 // 小小打包台：离线缓存。
 // 第一次打开时把游戏的几个文件存到平板上，以后没网也能玩；有网时在后台顺便更新。
 // 只缓存本站自己的文件，不碰任何别的网站。
-var CACHE = "kids-pack-v1";
+var CACHE = "kids-pack-v2";
 var FILES = [
   "./",
   "./index.html",
