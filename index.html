@@ -21,7 +21,7 @@
   整页一个文件，不连任何服务器、没有外部链接、没有登录、不收集数据；
   只在本机记住「最多打包几个」、收集到的贴纸和声音开关。
   全屏画布 + 上面一排大按钮；支持几根手指同时拖箱子。
-  打包好的箱子装上右边的小货车，装满 5 个货车开走；箱子上的贴纸收进贴纸本；戳泡泡会一个音一个音弹出《小星星》。
+  打包好的箱子装上右边的小货车，装满 5 个货车开走；箱子上的贴纸收进贴纸本。
 */
 :root {
   --ink: #24323a;
@@ -206,9 +206,6 @@ button { font: inherit; color: inherit; }
   var POPS = ["啪", "啵", "噗"];
   var SIZES = [[60, 46], [76, 56], [96, 66], [70, 70], [110, 52], [84, 62]];
   var TRUCK_LOAD = 5;
-  // 《小星星》（传统儿歌）：每戳破一个泡泡弹下一个音，一直接着往下弹。
-  var MELODY = [72, 72, 79, 79, 81, 81, 79, 77, 77, 76, 76, 74, 74, 72, 79, 79, 77, 77, 76, 76, 74,
-    79, 79, 77, 77, 76, 76, 74, 72, 72, 79, 79, 81, 81, 79, 77, 77, 76, 76, 74, 74, 72];
   var EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
   var FONT = getComputedStyle(document.body).fontFamily;
 
@@ -217,7 +214,7 @@ button { font: inherit; color: inherit; }
   var boxes = [], bits = [], floats = [], cheer = null;
   var drags = {};                       // 每根手指一个：pointerId → 正在拖的箱子
   var packed = 0, best = Number(load("kids-pack-best")) || 0, lastSpawn = 0, hintGone = false;
-  var soundOn = load("kids-pack-sound") !== "off", audio = null, noteIndex = 0;
+  var soundOn = load("kids-pack-sound") !== "off", audio = null;
   var collected = readCollected(), sets = Number(load("kids-pack-sets")) || 0, freshSticker = -1;
   var truck = { w: 0, x0: 0, offset: 0, from: 0, state: "come", t: 0, v: 0, color: 0, items: [], reserved: 0, pending: [], bump: 0 };
 
@@ -362,14 +359,13 @@ button { font: inherit; color: inherit; }
     });
     if (!target) return;
     target.popped = true;
-    pop(b.x + target.x, b.y + target.y, target.r, b.sticker);
+    pop(b.x + target.x, b.y + target.y, target.r);
     if (b.wrap.every(function (bubble) { return bubble.popped; })) finish(b);
   }
 
-  function pop(x, y, r, color) {
+  function pop(x, y, r) {
     sound("pop");
     floats.push({ x: x, y: y - r, life: 0.7, text: pick(POPS) });
-    if (soundOn) floats.push({ x: x + 14 * K, y: y - r - 8 * K, life: 0.9, text: Math.random() < 0.5 ? "♪" : "♫", color: color });
     if (REDUCED) return;
     for (var i = 0; i < 8; i++) {
       var a = Math.random() * Math.PI * 2, v = (80 + Math.random() * 140) * K;
@@ -689,10 +685,10 @@ button { font: inherit; color: inherit; }
     ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round";
     floats.forEach(function (f) {
       ctx.globalAlpha = Math.min(1, f.life * 2);
-      var size = f.big ? 28 : f.strong ? 20 : f.color ? 22 : 16;
+      var size = f.big ? 28 : f.strong ? 20 : 16;
       ctx.font = (f.strong ? "800 " : "700 ") + Math.round(size * K) + "px " + FONT;
       ctx.lineWidth = 4 * K; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.strokeText(f.text, f.x, f.y);
-      ctx.fillStyle = f.color || (f.strong ? "#1f9d55" : "#24323a"); ctx.fillText(f.text, f.x, f.y);
+      ctx.fillStyle = f.strong ? "#1f9d55" : "#24323a"; ctx.fillText(f.text, f.x, f.y);
     });
     ctx.globalAlpha = 1;
     if (!liveCount()) {
@@ -854,14 +850,10 @@ button { font: inherit; color: inherit; }
     osc.connect(gain); gain.connect(audio.destination);
     osc.start(t); osc.stop(t + length + 0.02);
   }
-  function nextNote() {
-    var midi = MELODY[noteIndex % MELODY.length];
-    noteIndex++;
-    return 440 * Math.pow(2, (midi - 69) / 12);
-  }
   function sound(kind) {
     if (!soundOn || !audio || audio.state !== "running") return;
-    if (kind === "pop") { var f = nextNote(); tone("triangle", f, f, 0.34, 0.2); tone("sine", f * 2, f * 2, 0.18, 0.05); }
+    // 戳破泡泡：很短的一声「啪」，从高往低掉，每次音高稍微不一样。
+    if (kind === "pop") tone("triangle", 700 + Math.random() * 400, 220, 0.06, 0.18);
     else if (kind === "wrap") tone("sine", 300, 500, 0.12, 0.08);
     else if (kind === "done") tone("sine", 520, 1040, 0.22, 0.12);
     else if (kind === "thud") tone("sine", 120, 60, 0.12, 0.2);
