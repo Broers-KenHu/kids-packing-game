@@ -19,7 +19,7 @@
 /*
   小小打包台（儿童版）：拖箱子、包泡泡纸、戳泡泡，给孩子在平板上玩。
   整页一个文件，不连任何服务器、没有外部链接、没有登录、不收集数据；
-  只在本机记住「最多打包几个」、收集到的贴纸和声音开关。
+  只在本机记住「最多打包几个」、收集到的贴纸、声音和背景音乐开关。
   全屏画布 + 上面一排大按钮；支持几根手指同时拖箱子。
   打包好的箱子装上右边的小货车，装满 5 个货车开走；箱子上的贴纸收进贴纸本。
 */
@@ -62,7 +62,8 @@ button { font: inherit; color: inherit; }
 }
 .score .star { font-size: 28px; line-height: 1; }
 .score b { font-size: 30px; line-height: 1.1; font-weight: 800; min-width: 1ch; }
-.score small { font-size: 14px; color: var(--muted); margin-left: 4px; }
+.score small { font-size: 14px; color: var(--muted); margin-left: 4px; white-space: nowrap; }
+@media (max-width: 440px) { .score small { display: none; } }
 .tools { display: flex; gap: 10px; }
 .tools button {
   position: relative; pointer-events: auto; width: 58px; height: 58px; border: 0; border-radius: 50%;
@@ -77,6 +78,11 @@ button { font: inherit; color: inherit; }
   background: #ff3b30; border: 3px solid #fff;
 }
 .tools button.bounce { animation: bounce .7s ease; }
+.tools button.off { opacity: .55; }
+.tools button.off::after {
+  content: ""; position: absolute; left: 22%; right: 22%; top: 50%; height: 4px; margin-top: -2px;
+  background: #e63946; border-radius: 2px; transform: rotate(-40deg);
+}
 @keyframes bounce { 0% { transform: scale(1); } 30% { transform: scale(1.3) rotate(-8deg); } 60% { transform: scale(.94) rotate(4deg); } 100% { transform: scale(1); } }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
@@ -125,8 +131,8 @@ button { font: inherit; color: inherit; }
 }
 
 @media (max-width: 560px) {
-  .tools { gap: 8px; }
-  .tools button { width: 48px; height: 48px; font-size: 23px; }
+  .tools { gap: 6px; }
+  .tools button { width: 44px; height: 44px; font-size: 21px; }
   .score { padding: 5px 14px 5px 10px; }
   .score b { font-size: 24px; }
   .score .star { font-size: 22px; }
@@ -151,6 +157,7 @@ button { font: inherit; color: inherit; }
   <div class="tools">
     <button type="button" id="book-btn" aria-label="贴纸本">📒<i class="dot" id="book-dot" hidden></i></button>
     <button type="button" id="sweep" aria-label="换一批箱子">🧹</button>
+    <button type="button" id="music" aria-label="背景音乐" aria-pressed="true">🎵</button>
     <button type="button" id="sound" aria-label="声音" aria-pressed="true">🔊</button>
     <button type="button" id="full" aria-label="全屏" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -214,7 +221,7 @@ button { font: inherit; color: inherit; }
   var boxes = [], bits = [], floats = [], cheer = null;
   var drags = {};                       // 每根手指一个：pointerId → 正在拖的箱子
   var packed = 0, best = Number(load("kids-pack-best")) || 0, lastSpawn = 0, hintGone = false;
-  var soundOn = load("kids-pack-sound") !== "off", audio = null;
+  var soundOn = load("kids-pack-sound") !== "off", musicOn = load("kids-pack-music") !== "off", audio = null;
   var collected = readCollected(), sets = Number(load("kids-pack-sets")) || 0, freshSticker = -1;
   var truck = { w: 0, x0: 0, offset: 0, from: 0, state: "come", t: 0, v: 0, color: 0, items: [], reserved: 0, pending: [], bump: 0 };
 
@@ -837,8 +844,10 @@ button { font: inherit; color: inherit; }
     if (!soundOn) return;
     if (!audio) {
       try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; return; }
+      audio.onstatechange = function () { if (audio.state === "running") startMusic(); };
     }
     if (audio.state === "suspended" && audio.resume) audio.resume();
+    startMusic();
   }
   function tone(type, from, to, length, volume, delay) {
     var t = audio.currentTime + (delay || 0), osc = audio.createOscillator(), gain = audio.createGain();
@@ -865,6 +874,99 @@ button { font: inherit; color: inherit; }
     else if (kind === "cheer") { tone("triangle", 523, 523, 0.16, 0.14); tone("triangle", 659, 659, 0.16, 0.14, 0.14); tone("triangle", 784, 1046, 0.34, 0.14, 0.28); }
   }
 
+  // ---------------------------------------------------------------- 背景音乐 ----
+  // 一首自己写的轻快小曲（C 大调，每分钟 100 拍，16 小节一圈约 38 秒）：
+  // 低音「咚」在每小节第 1、3 拍，和弦「嚓」在反拍，八音盒一样的旋律，再加一点很轻的沙锤。
+  // 全部由浏览器现场合成，不加载文件；音量比戳泡泡这些音效小很多，只当背景。
+  var STEP = 60 / 100 / 2;                       // 一个八分音符的秒数
+  var CHORDS = {
+    C: { bass: 48, tones: [60, 64, 67] }, Am: { bass: 45, tones: [60, 64, 69] }, F: { bass: 41, tones: [60, 65, 69] },
+    G: { bass: 43, tones: [59, 62, 67] }, Em: { bass: 40, tones: [59, 64, 67] }, Dm: { bass: 38, tones: [62, 65, 69] }
+  };
+  // 每小节：前半拍和弦、后半拍和弦、8 个八分音符的旋律（0 = 不弹）。
+  var SONG = [
+    ["C", "C", [76, 0, 79, 0, 84, 0, 79, 76]], ["Am", "Am", [76, 0, 72, 0, 69, 72, 76, 0]],
+    ["F", "F", [77, 0, 81, 0, 84, 0, 81, 77]], ["G", "G", [79, 0, 0, 74, 79, 0, 83, 0]],
+    ["C", "C", [76, 0, 79, 0, 84, 0, 88, 0]], ["Am", "Am", [86, 84, 81, 0, 76, 0, 72, 0]],
+    ["F", "G", [77, 81, 84, 0, 83, 79, 74, 0]], ["C", "C", [72, 0, 76, 79, 72, 0, 0, 0]],
+    ["F", "F", [81, 0, 81, 84, 81, 0, 77, 0]], ["G", "G", [79, 0, 79, 83, 79, 0, 74, 0]],
+    ["Em", "Em", [76, 0, 79, 0, 83, 0, 79, 0]], ["Am", "Am", [81, 0, 76, 0, 72, 0, 76, 0]],
+    ["F", "F", [77, 81, 84, 81, 77, 0, 72, 0]], ["G", "G", [79, 83, 86, 83, 79, 0, 74, 0]],
+    ["Em", "Am", [76, 0, 79, 0, 81, 0, 76, 0]], ["Dm", "G", [74, 0, 77, 0, 79, 0, 83, 0]]
+  ];
+  var music = { timer: null, step: 0, next: 0, gain: null, noise: null };
+
+  function mtof(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
+  function musicNote(type, midi, t, length, volume) {
+    var osc = audio.createOscillator(), gain = audio.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(mtof(midi), t);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(volume, t + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + length);
+    osc.connect(gain); gain.connect(music.gain);
+    osc.start(t); osc.stop(t + length + 0.02);
+  }
+  function shaker(t, volume) {
+    if (!music.noise) {
+      var length = Math.floor(audio.sampleRate * 0.2), buffer = audio.createBuffer(1, length, audio.sampleRate), data = buffer.getChannelData(0);
+      for (var i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+      music.noise = buffer;
+    }
+    var src = audio.createBufferSource(), filter = audio.createBiquadFilter(), gain = audio.createGain();
+    src.buffer = music.noise;
+    filter.type = "highpass"; filter.frequency.value = 6000;
+    gain.gain.setValueAtTime(volume, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    src.connect(filter); filter.connect(gain); gain.connect(music.gain);
+    src.start(t); src.stop(t + 0.06);
+  }
+  function playStep(i, t) {
+    var bar = SONG[Math.floor(i / 8) % SONG.length], s = i % 8, chord = CHORDS[s < 4 ? bar[0] : bar[1]], lead = bar[2][s];
+    if (s === 0 || s === 4) musicNote("triangle", chord.bass, t, 0.4, 0.07);               // 咚
+    if (s === 2 || s === 6) chord.tones.forEach(function (n) { musicNote("triangle", n, t, 0.16, 0.016); }); // 嚓
+    if (lead) { musicNote("sine", lead, t, 0.5, 0.06); musicNote("triangle", lead + 12, t, 0.18, 0.012); }  // 八音盒
+    shaker(t, s % 2 ? 0.022 : 0.01);
+  }
+  function scheduleMusic() {
+    if (!audio || audio.state !== "running") return;
+    var now = audio.currentTime;
+    if (music.next < now - 0.05) music.next = now + 0.03;   // 后台停过一会儿：从现在接着弹，不补弹
+    while (music.next < now + 0.15) {
+      playStep(music.step, music.next);
+      music.step = (music.step + 1) % (SONG.length * 8);
+      music.next += STEP;
+    }
+  }
+  function startMusic() {
+    if (!soundOn || !musicOn || !audio || audio.state !== "running" || music.timer || document.hidden) return;
+    if (!music.gain) { music.gain = audio.createGain(); music.gain.connect(audio.destination); }
+    var t = audio.currentTime;
+    music.gain.gain.cancelScheduledValues(t);
+    music.gain.gain.setValueAtTime(0.0001, t);
+    music.gain.gain.exponentialRampToValueAtTime(1, t + 1.5);   // 慢慢响起来
+    music.next = t + 0.05;
+    music.timer = setInterval(scheduleMusic, 25);
+    scheduleMusic();
+  }
+  function stopMusic() {
+    if (!music.timer) return;
+    clearInterval(music.timer);
+    music.timer = null;
+    if (audio && music.gain) {
+      var t = audio.currentTime;
+      music.gain.gain.cancelScheduledValues(t);
+      music.gain.gain.setValueAtTime(Math.max(music.gain.gain.value, 0.0001), t);
+      music.gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    }
+  }
+  // 切到后台、锁屏：音乐和声音都停；回来再接着放。
+  function pauseAll() { stopMusic(); if (audio && audio.state === "running" && audio.suspend) audio.suspend(); }
+  function resumeAll() { if (audio && soundOn && audio.state === "suspended" && audio.resume) audio.resume(); startMusic(); }
+  window.kidsPackPause = pauseAll;     // 安卓安装包在应用切到后台时调用
+  window.kidsPackResume = resumeAll;
+  document.addEventListener("visibilitychange", function () { if (document.hidden) pauseAll(); else resumeAll(); });
+
   // ---------------------------------------------------------------- 按钮 ----
   function showSound() {
     var b = el("sound");
@@ -876,8 +978,24 @@ button { font: inherit; color: inherit; }
     soundOn = !soundOn;
     save("kids-pack-sound", soundOn ? "on" : "off");
     showSound();
+    if (!soundOn) stopMusic();
     unlockAudio();
     if (soundOn) setTimeout(function () { sound("sparkle"); }, 30);
+  });
+  function showMusic() {
+    var b = el("music");
+    b.classList.toggle("off", !musicOn);
+    b.setAttribute("aria-pressed", String(musicOn));
+    b.setAttribute("aria-label", musicOn ? "背景音乐：开" : "背景音乐：关");
+  }
+  // 🎵 只管背景音乐；戳泡泡这些音效由 🔊 管。打开音乐时如果声音是关的，一起打开。
+  el("music").addEventListener("click", function () {
+    musicOn = !musicOn;
+    save("kids-pack-music", musicOn ? "on" : "off");
+    showMusic();
+    if (!musicOn) { stopMusic(); return; }
+    if (!soundOn) { soundOn = true; save("kids-pack-sound", "on"); showSound(); }
+    unlockAudio();
   });
   el("sweep").addEventListener("click", function () { unlockAudio(); sweep(); });
 
@@ -916,6 +1034,7 @@ button { font: inherit; color: inherit; }
 
   showScore();
   showSound();
+  showMusic();
   resize();
   truck.from = truck.w + 60 * K; truck.offset = truck.from;   // 一开始货车从右边开进来
   window.addEventListener("resize", resize);
