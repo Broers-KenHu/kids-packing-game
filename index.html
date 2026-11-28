@@ -19,20 +19,22 @@
 /*
   小小打包台（儿童版）：拖箱子、包泡泡纸、戳泡泡，给孩子在平板上玩。
   整页一个文件，不连任何服务器、没有外部链接、没有登录、不收集数据；
-  只在本机记住「最多打包几个」、收集到的贴纸、声音和背景音乐开关。
+  只在本机记住「最多打包几个」、收集到的贴纸、大关卡奖章和进度、声音和背景音乐开关。
   全屏画布 + 上面一排大按钮；支持几根手指同时拖箱子。
   打包好的箱子装上右边的小货车，装满 5 个货车开走；箱子上的贴纸收进贴纸本。
+  每送走 5 辆货车进一次大关卡，5 关按难易轮着来：大卡车要开啦 → 巨无霸箱子 → 暴风雨来啦 → 捣蛋小狗 → 传送带快跑。
+  大关卡不会输，按表现给 1–3 颗星和一枚奖章；贴纸本里点已得到的奖章可以再玩那一关。
 */
 :root {
   --ink: #24323a;
   --muted: #56707c;
   --pill: rgba(255, 255, 255, .9);
   --accent: #ff7a00;
-  --cell: min(118px, calc((100vw - 96px) / 4), calc((100vh - 200px) / 4));
+  --cell: clamp(48px, min(calc((100vw - 96px) / 4), calc((100vh - 260px) / 5)), 110px);
   color-scheme: light;
 }
 @supports (height: 100dvh) {
-  :root { --cell: min(118px, calc((100vw - 96px) / 4), calc((100dvh - 200px) / 4)); }
+  :root { --cell: clamp(48px, min(calc((100vw - 96px) / 4), calc((100dvh - 260px) / 5)), 110px); }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
@@ -55,6 +57,7 @@ button { font: inherit; color: inherit; }
   padding: max(12px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
   pointer-events: none;
 }
+.hud-left { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .score {
   display: flex; align-items: center; gap: 8px; background: var(--pill); border-radius: 999px;
   padding: 6px 18px 6px 12px; box-shadow: 0 3px 10px rgba(30, 80, 110, .16);
@@ -64,6 +67,14 @@ button { font: inherit; color: inherit; }
 .score b { font-size: 30px; line-height: 1.1; font-weight: 800; min-width: 1ch; }
 .score small { font-size: 14px; color: var(--muted); margin-left: 4px; white-space: nowrap; }
 @media (max-width: 440px) { .score small { display: none; } }
+.trip {
+  display: flex; align-items: center; gap: 2px; background: var(--pill); border-radius: 999px;
+  padding: 3px 12px 3px 10px; box-shadow: 0 3px 10px rgba(30, 80, 110, .12); font-size: 13px; color: var(--muted);
+  white-space: nowrap;
+}
+.trip span { margin-right: 4px; }
+.trip i { font-style: normal; font-size: 18px; opacity: .22; filter: grayscale(1); }
+.trip i.on { opacity: 1; filter: none; }
 .tools { display: flex; gap: 10px; }
 .tools button {
   position: relative; pointer-events: auto; width: 58px; height: 58px; border: 0; border-radius: 50%;
@@ -96,6 +107,7 @@ button { font: inherit; color: inherit; }
 }
 .hint.gone { opacity: 0; }
 #safe { position: fixed; left: 0; bottom: 0; width: 1px; height: env(safe-area-inset-bottom, 0px); visibility: hidden; pointer-events: none; }
+#safe-top { position: fixed; left: 0; top: 0; width: 1px; height: env(safe-area-inset-top, 0px); visibility: hidden; pointer-events: none; }
 
 /* 贴纸本 */
 .book {
@@ -105,13 +117,16 @@ button { font: inherit; color: inherit; }
 .book-card {
   background: #fffdf7; border-radius: 26px; padding: 16px 18px 18px; box-shadow: 0 12px 40px rgba(20, 60, 90, .3);
   display: flex; flex-direction: column; gap: 12px; align-items: center; max-width: 100%;
+  max-height: calc(100vh - 32px); overflow-y: auto; touch-action: pan-y;
 }
+@supports (height: 100dvh) { .book-card { max-height: calc(100dvh - 32px); } }
 .book-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; }
 .book-head h2 { margin: 0; font-size: 22px; font-weight: 800; }
 .book-head h2 span { font-size: 18px; color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 6px; }
 .book-close {
   width: 52px; height: 52px; border-radius: 50%; border: 0; background: #eef3f6; font-size: 24px; cursor: pointer; flex: none;
 }
+.book-body { display: flex; flex-direction: column; gap: 10px; width: max-content; max-width: 100%; }
 .book-grid { display: grid; grid-template-columns: repeat(4, var(--cell)); gap: 10px; }
 .cell {
   width: var(--cell); height: var(--cell); border-radius: 18px; border: 3px dashed #c9d6dd; background: #f1f5f7;
@@ -124,6 +139,20 @@ button { font: inherit; color: inherit; }
 .cell .q { font: 800 calc(var(--cell) * .38) / 1 system-ui, sans-serif; }
 @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-12deg) scale(1.12); } 60% { transform: rotate(9deg) scale(1.06); } }
 @keyframes shine { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+.book-sub { margin: 4px 0 0; font-size: 17px; font-weight: 800; }
+.medal-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.medal {
+  border-radius: 16px; border: 3px dashed #c9d6dd; background: #f1f5f7; padding: 6px 2px 5px; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  font-size: 12px; line-height: 1.2; color: #8fa1a9; min-height: calc(var(--cell) * .95);
+}
+.medal b {
+  font-size: calc(var(--cell) * .36); line-height: 1; font-weight: 400;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+}
+.medal.got { border: 3px solid #ffb703; background: #fff; color: var(--ink); cursor: pointer; box-shadow: 0 3px 0 #ffb703; }
+.medal.lock b { filter: grayscale(1); opacity: .35; }
+.medal .stars { font-size: 11px; letter-spacing: -1px; white-space: nowrap; }
 .book-foot { margin: 0; font-size: 16px; color: var(--muted); text-align: center; }
 .book-again {
   min-height: 48px; padding: 0 22px; border-radius: 999px; border: 0; background: var(--accent); color: #fff;
@@ -136,8 +165,10 @@ button { font: inherit; color: inherit; }
   .score { padding: 5px 14px 5px 10px; }
   .score b { font-size: 24px; }
   .score .star { font-size: 22px; }
+  .trip i { font-size: 15px; }
   .hint { font-size: 15px; top: calc(max(12px, env(safe-area-inset-top)) + 62px); }
   .book-grid { gap: 8px; }
+  .medal-grid { gap: 6px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .tools button, .hint { transition: none; }
@@ -149,10 +180,13 @@ button { font: inherit; color: inherit; }
 <canvas id="game" aria-label="打包台小游戏：拖动、扔、叠箱子，点箱子包泡泡纸，点泡泡捏爆，打包好的箱子装上小货车。"></canvas>
 
 <div class="hud">
-  <div class="score" aria-live="polite">
-    <span class="star" aria-hidden="true">⭐</span>
-    <b id="packed">0</b>
-    <small id="best-wrap" hidden>最多 <span id="best">0</span></small>
+  <div class="hud-left">
+    <div class="score" aria-live="polite">
+      <span class="star" aria-hidden="true">⭐</span>
+      <b id="packed">0</b>
+      <small id="best-wrap" hidden>最多 <span id="best">0</span></small>
+    </div>
+    <div class="trip" id="trip"></div>
   </div>
   <div class="tools">
     <button type="button" id="book-btn" aria-label="贴纸本">📒<i class="dot" id="book-dot" hidden></i></button>
@@ -174,12 +208,17 @@ button { font: inherit; color: inherit; }
       <h2 id="book-title">我的贴纸本<span id="book-count">0/16</span></h2>
       <button type="button" class="book-close" id="book-close" aria-label="关上贴纸本">✕</button>
     </div>
-    <div class="book-grid" id="book-grid"></div>
+    <div class="book-body">
+      <div class="book-grid" id="book-grid"></div>
+      <h3 class="book-sub">大关卡奖章</h3>
+      <div class="medal-grid" id="medal-grid"></div>
+    </div>
     <p class="book-foot" id="book-foot">打包好箱子，就能收集箱子上的贴纸。</p>
     <button type="button" class="book-again" id="book-again" hidden>再集一次</button>
   </div>
 </div>
 <div id="safe" aria-hidden="true"></div>
+<div id="safe-top" aria-hidden="true"></div>
 
 <script>
 (function () {
@@ -208,7 +247,10 @@ button { font: inherit; color: inherit; }
     { body: "#ffe08a", top: "#f7cd5f", tape: "#fff3c9", edge: "#bf9b2e" },
     { body: "#d3b8ff", top: "#bc98f7", tape: "#ede3ff", edge: "#8c69c9" }
   ];
+  var GOLD = { body: "#ffd54a", top: "#f4c430", tape: "#fff1b0", edge: "#c99a14" };
+  var BOSS_PAPER = { body: "#c9a06b", top: "#b88c57", tape: "#e3c28f", edge: "#7a5530" };
   var TRUCK_COLORS = ["#ff6b6b", "#4d96ff", "#2bb673", "#ffb703", "#b980f0"];
+  var RUSH_COLOR = "#ff8c42";
   var CONFETTI = ["#ff6b6b", "#ffd166", "#06d6a0", "#4d96ff", "#b980f0", "#ff8fab"];
   var POPS = ["啪", "啵", "噗"];
   var SIZES = [[60, 46], [76, 56], [96, 66], [70, 70], [110, 52], [84, 62]];
@@ -216,18 +258,38 @@ button { font: inherit; color: inherit; }
   var EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
   var FONT = getComputedStyle(document.body).fontFamily;
 
+  // ---------------------------------------------------------------- 大关卡（按难易排好的顺序） ----
+  var LEVEL_EVERY = 5;   // 每送走 5 辆货车进一次大关卡
+  var LEVELS = [null,
+    { key: "rush", name: "大卡车要开啦", short: "大卡车", medal: "⏰", goal: "闹钟响之前，装满大卡车 8 箱！" },
+    { key: "boss", name: "巨无霸箱子", short: "巨无霸", medal: "👑", goal: "戳破巨无霸身上所有的泡泡！几根手指一起戳更快" },
+    { key: "rain", name: "暴风雨来啦", short: "暴风雨", medal: "🌈", goal: "下雨啦！打包 6 箱，快包泡泡纸或者拖到雨棚下" },
+    { key: "puppy", name: "捣蛋小狗", short: "小狗", medal: "🐶", goal: "小狗在捣乱！打包 8 箱，点小狗扔球给它玩" },
+    { key: "belt", name: "传送带快跑", short: "传送带", medal: "🏁", goal: "箱子在传送带上跑，跑到头之前快打包好！" }
+  ];
+  var WAVES = [{ speed: 45, goal: 3, every: 3.6 }, { speed: 75, goal: 3, every: 3.0 }, { speed: 105, goal: 4, every: 2.5 }];
+
   // ---------------------------------------------------------------- 状态 ----
-  var W = 0, H = 0, DPR = 1, FLOOR = 0, K = 1, MAX_BOXES = 10, RIGHT = 0;
+  var W = 0, H = 0, DPR = 1, FLOOR = 0, K = 1, MAX_BOXES = 10, RIGHT = 0, SAFE_TOP = 0;
   var boxes = [], bits = [], floats = [], cheer = null;
   var drags = {};                       // 每根手指一个：pointerId → 正在拖的箱子
+  var bossTouch = {};                   // 正在戳巨无霸的手指
   var packed = 0, best = Number(load("kids-pack-best")) || 0, lastSpawn = 0, hintGone = false;
   var soundOn = load("kids-pack-sound") !== "off", musicOn = load("kids-pack-music") !== "off", audio = null;
   var collected = readCollected(), sets = Number(load("kids-pack-sets")) || 0, freshSticker = -1;
-  var truck = { w: 0, x0: 0, offset: 0, from: 0, state: "come", t: 0, v: 0, color: 0, items: [], reserved: 0, pending: [], bump: 0 };
+  var truck = { w: 0, x0: 0, offset: 0, from: 0, state: "come", t: 0, v: 0, color: 0, items: [], reserved: 0, pending: [], bump: 0,
+    cap: TRUCK_LOAD, kind: "normal", after: null };
+  var game = { mode: "normal", t: 0, no: 0, replay: false, stars: 0, best: 0, newMedal: false };  // normal | intro | level | outro
+  var L = null;                          // 正在玩的大关卡
+  var trips = clampInt(load("kids-pack-trips"), 0, LEVEL_EVERY - 1, 0);
+  var nextLevel = clampInt(load("kids-pack-next-level"), 1, 5, 1);
+  var medals = readMedals();
+  var BELT = 0, beltPos = 0, shake = 0, musicBpm = 100, puppy = null, ball = null, rain = [], boxSeq = 0;
 
   function clamp(v, a, z) { return Math.max(a, Math.min(z, v)); }
+  function clampInt(v, a, z, d) { var n = parseInt(v, 10); return isNaN(n) ? d : clamp(n, a, z); }
   function pick(list) { return list[Math.floor(Math.random() * list.length)]; }
-  function liveCount() { var n = 0; boxes.forEach(function (b) { if (!b.leaving) n++; }); return n; }
+  function liveCount() { var n = 0; boxes.forEach(function (b) { if (!b.leaving && !b.gone) n++; }); return n; }
 
   function readCollected() {
     var list = [];
@@ -235,12 +297,41 @@ button { font: inherit; color: inherit; }
     if (!Array.isArray(list)) list = [];
     return list.filter(function (i, n) { return i >= 0 && i < STICKERS.length && Math.floor(i) === i && list.indexOf(i) === n; });
   }
+  function readMedals() {
+    var raw = {}, out = {};
+    try { raw = JSON.parse(load("kids-pack-medals") || "{}") || {}; } catch (e) { raw = {}; }
+    for (var n = 1; n <= 5; n++) { var s = parseInt(raw[n], 10); if (s >= 1 && s <= 3) out[n] = s; }
+    return out;
+  }
 
   function showScore() {
     el("packed").textContent = packed;
     if (best) { el("best-wrap").hidden = false; el("best").textContent = best; }
     el("book-btn").setAttribute("aria-label", "贴纸本：" + collected.length + "/" + STICKERS.length);
   }
+  // 左上角的小货车：再送走几辆就到大关卡。
+  function showTrip() {
+    var t = el("trip");
+    t.hidden = game.mode !== "normal";
+    var html = "<span>大关卡</span>";
+    for (var i = 0; i < LEVEL_EVERY; i++) html += '<i class="' + (i < trips ? "on" : "") + '">🚚</i>';
+    t.innerHTML = html;
+    t.setAttribute("aria-label", "再送走 " + (LEVEL_EVERY - trips) + " 辆货车就到大关卡");
+  }
+  function hideHint() { if (!hintGone) { hintGone = true; el("hint").classList.add("gone"); } }
+
+  function layoutTruck() {
+    truck.w = Math.round((truck.cap > TRUCK_LOAD ? 178 : 132) * K);
+    truck.x0 = W - truck.w - Math.round(8 * K);
+    RIGHT = truck.x0 - Math.round(6 * K);
+  }
+  function clampBoxes() {
+    boxes.forEach(function (b) {
+      if (b.leaving || b.carried) return;
+      b.x = clamp(b.x, 0, Math.max(0, RIGHT - b.w)); b.y = Math.min(b.y, FLOOR - b.h);
+    });
+  }
+  function setTruck(cfg) { truck.cap = cfg.cap; truck.kind = cfg.kind; layoutTruck(); clampBoxes(); }
 
   function resize() {
     var rect = canvas.getBoundingClientRect();
@@ -251,15 +342,10 @@ button { font: inherit; color: inherit; }
     // 平板屏幕大，箱子、泡泡跟着放大，手指好点。已经在台上的箱子保持原来的大小。
     K = clamp(Math.min(W, H) / 520, 0.8, 1.7);
     FLOOR = H - Math.round(44 * K) - (el("safe").offsetHeight || 0);
+    SAFE_TOP = el("safe-top").offsetHeight || 0;
     MAX_BOXES = W * H > 500000 ? 12 : 9;
-    // 右边停小货车，箱子只在货车左边玩。
-    truck.w = Math.round(132 * K);
-    truck.x0 = W - truck.w - Math.round(8 * K);
-    RIGHT = truck.x0 - Math.round(6 * K);
-    boxes.forEach(function (b) {
-      if (b.leaving) return;
-      b.x = clamp(b.x, 0, Math.max(0, RIGHT - b.w)); b.y = Math.min(b.y, FLOOR - b.h);
-    });
+    layoutTruck();      // 右边停小货车，箱子只在货车左边玩。
+    clampBoxes();
   }
 
   function pickSticker() {
@@ -271,19 +357,21 @@ button { font: inherit; color: inherit; }
   }
 
   function spawn(centerX) {
-    if (liveCount() >= MAX_BOXES) return;
+    if (liveCount() >= MAX_BOXES) return null;
     var s = pick(SIZES), w = Math.round(s[0] * K), h = Math.round(s[1] * K), si = pickSticker();
     var room = Math.max(0, RIGHT - w);
     var x = centerX != null ? clamp(centerX - w / 2, 0, room) : clamp(20 + Math.random() * (room - 40), 0, room);
-    boxes.push({ x: x, y: -h - Math.random() * 60 * K, w: w, h: h, vx: (Math.random() - 0.5) * 120 * K, vy: 0,
+    var b = { id: ++boxSeq, x: x, y: -h - Math.random() * 60 * K, w: w, h: h, vx: (Math.random() - 0.5) * 120 * K, vy: 0,
       tilt: 0, squash: 0, si: si, emoji: STICKERS[si][0], sticker: STICKERS[si][1],
       paper: Math.random() < 0.4 ? PAPERS[0] : pick(PAPERS.slice(1)),
-      wrap: null, leaving: 0, done: false, drag: null, grounded: false, py: 0, fly: null, flyScale: 1 });
+      wrap: null, leaving: 0, done: false, drag: null, grounded: false, py: 0, fly: null, flyScale: 1, wet: 0 };
+    boxes.push(b);
+    return b;
   }
 
-  function bubbleGrid(b) {
+  function bubbleGrid(b, radius) {
     // 泡泡大一点、少一点：一个箱子大约 6–12 个。
-    var r = Math.max(6, Math.min(9 * K, b.w / 8)), gap = r * 2.25, list = [];
+    var r = radius || Math.max(6, Math.min(9 * K, b.w / 8)), gap = r * 2.25, list = [];
     for (var y = r + 3; y < b.h - r; y += gap) {
       var offset = (Math.round(y / gap) % 2) * r;
       for (var x = r + 3 + offset; x < b.w - r; x += gap) list.push({ x: x, y: y, r: r, popped: false });
@@ -296,7 +384,7 @@ button { font: inherit; color: inherit; }
     var pad = 6 * K; // 手指比鼠标粗，箱子周围留一点余量
     for (var i = boxes.length - 1; i >= 0; i--) {
       var b = boxes[i];
-      if (!b.leaving && !b.done && px >= b.x - pad && px <= b.x + b.w + pad && py >= b.y - pad && py <= b.y + b.h + pad) return b;
+      if (!b.leaving && !b.done && !b.gone && px >= b.x - pad && px <= b.x + b.w + pad && py >= b.y - pad && py <= b.y + b.h + pad) return b;
     }
     return null;
   }
@@ -306,17 +394,39 @@ button { font: inherit; color: inherit; }
     return { x: event.clientX - rect.left, y: event.clientY - rect.top, t: performance.now() };
   }
 
+  // 现在能不能「点空地方掉一箱」/自动掉箱子。
+  function spawnRule() {
+    if (game.mode === "intro" || game.mode === "outro") return null;
+    if (game.mode === "level") {
+      if (!L || L.key === "boss" || L.key === "belt" || L.goalDone) return null;
+      if (L.key === "rush") return { every: 2200, max: 7 };
+      return { every: 3000, max: 6 };
+    }
+    return { every: 3800, max: 7 };
+  }
+
   // ---------------------------------------------------------------- 手指 / 鼠标 ----
   canvas.addEventListener("pointerdown", function (event) {
     event.preventDefault();
     unlockAudio();
-    var p = point(event), b = hit(p.x, p.y);
+    var p = point(event);
+    if (game.mode === "intro") return;
+    if (game.mode === "outro") { if (game.t > 2) endOutro(); return; }
+    if (puppy && hitPuppy(p)) { throwBall(); return; }
+    var b = hit(p.x, p.y);
+    if (b && b.boss) {
+      bossTouch[event.pointerId] = b;
+      try { canvas.setPointerCapture(event.pointerId); } catch (e) { /* 老浏览器 */ }
+      popNearest(b, p);
+      return;
+    }
     if (!b) {
       if (p.x >= RIGHT && p.y > FLOOR - 70 * K) { if (truck.state === "parked") { truck.bump = 1; sound("beep"); } } // 点货车：嘀
-      else spawn(p.x);                // 点空的地方：掉下来一箱
+      else if (spawnRule()) spawn(p.x);   // 点空的地方：掉下来一箱
       return;
     }
     if (b.drag) return;               // 这个箱子已经被另一根手指拿着
+    if (b.carried) takeFromPuppy(b);  // 从小狗嘴里抢回来
     try { canvas.setPointerCapture(event.pointerId); } catch (e) { /* 老浏览器 */ }
     boxes.splice(boxes.indexOf(b), 1); boxes.push(b);   // 拿起来的放最上层
     var d = { box: b, dx: p.x - b.x, dy: p.y - b.y, start: p, last: p, vx: 0, vy: 0, moved: false };
@@ -324,6 +434,8 @@ button { font: inherit; color: inherit; }
   }, { passive: false });
 
   canvas.addEventListener("pointermove", function (event) {
+    var boss = bossTouch[event.pointerId];
+    if (boss) { popUnder(boss, point(event)); return; }   // 在巨无霸身上划过去也能戳破
     var d = drags[event.pointerId];
     if (!d) return;
     var p = point(event), dt = Math.max(1, p.t - d.last.t) / 1000;
@@ -334,6 +446,7 @@ button { font: inherit; color: inherit; }
   });
 
   function release(event, cancelled) {
+    delete bossTouch[event.pointerId];
     var d = drags[event.pointerId];
     if (!d) return;
     delete drags[event.pointerId];
@@ -352,22 +465,44 @@ button { font: inherit; color: inherit; }
   canvas.addEventListener("pointercancel", function (event) { release(event, true); });
 
   function tap(b, p) {
+    if (b.soaked) {
+      // 淋湿的箱子要先擦三下才能包泡泡纸。
+      b.dry = (b.dry || 0) + 1;
+      sound("wipe");
+      floats.push({ x: p.x, y: p.y - 10 * K, life: 0.6, text: "擦" });
+      if (b.dry >= 3) { b.soaked = false; b.wet = 0; b.dry = 0; floats.push({ x: b.x + b.w / 2, y: b.y - 8 * K, life: 1, text: "干啦！", strong: true }); }
+      return;
+    }
     if (!b.wrap) {
       b.wrap = bubbleGrid(b);
       b.squash = 0.12;
       sound("wrap");
       return;
     }
+    popNearest(b, p);
+  }
+
+  function popNearest(b, p) {
     var lx = p.x - b.x, ly = p.y - b.y, target = null, bestD = Infinity;
     b.wrap.forEach(function (bubble) {
       if (bubble.popped) return;
       var d = (bubble.x - lx) * (bubble.x - lx) + (bubble.y - ly) * (bubble.y - ly);
       if (d < bestD) { bestD = d; target = bubble; }
     });
-    if (!target) return;
-    target.popped = true;
-    pop(b.x + target.x, b.y + target.y, target.r);
-    if (b.wrap.every(function (bubble) { return bubble.popped; })) finish(b);
+    if (target) popBubble(b, target);
+  }
+  function popUnder(b, p) {
+    if (b.done || !b.wrap) return;
+    var lx = p.x - b.x, ly = p.y - b.y;
+    b.wrap.forEach(function (bubble) {
+      if (!bubble.popped && (bubble.x - lx) * (bubble.x - lx) + (bubble.y - ly) * (bubble.y - ly) < bubble.r * bubble.r * 1.3) popBubble(b, bubble);
+    });
+  }
+  function popBubble(b, bubble) {
+    if (bubble.popped || b.done) return;
+    bubble.popped = true;
+    pop(b.x + bubble.x, b.y + bubble.y, bubble.r);
+    if (b.wrap.every(function (x) { return x.popped; })) { if (b.boss) bossDefeated(b); else finish(b); }
   }
 
   function pop(x, y, r) {
@@ -395,15 +530,16 @@ button { font: inherit; color: inherit; }
     sound("done");
     floats.push({ x: b.x + b.w / 2, y: b.y - 8 * K, life: 1.2, text: "打包好了！", strong: true });
     confetti(b.x + b.w / 2, b.y, 26, 380);
-    setTimeout(function () { flyToTruck(b); }, REDUCED ? 120 : 650);
+    setTimeout(function () { if (!b.gone) flyToTruck(b); }, REDUCED ? 120 : 650);
   }
 
   // ---------------------------------------------------------------- 小货车 ----
   // 货车停着、还有空位：箱子飞进车斗的某个位置；货车不在（开走了、正开回来）：箱子飞出右边，等下一辆车来了再装上。
   function flyToTruck(b) {
     var slot = -1;
-    if (truck.state === "parked" && truck.items.length + truck.reserved < TRUCK_LOAD) { slot = truck.items.length + truck.reserved; truck.reserved++; }
+    if (truck.state === "parked" && truck.items.length + truck.reserved < truck.cap) { slot = truck.items.length + truck.reserved; truck.reserved++; }
     b.leaving = 1;
+    b.carried = false;
     b.fly = { t: 0, cx0: b.x + b.w / 2, by0: b.y + b.h, slot: slot };
   }
 
@@ -416,7 +552,7 @@ button { font: inherit; color: inherit; }
   }
 
   function slotPos(i, g) {
-    var row = i < 3 ? 0 : 1, col = i < 3 ? i : i - 3, step = g.mini + 2 * K;
+    var perRow = Math.ceil(truck.cap / 2), row = i < perRow ? 0 : 1, col = row ? i - perRow : i, step = g.mini + 2 * K;
     return { cx: g.bedX + 6 * K + g.mini / 2 + col * step + (row ? step / 2 : 0), by: g.bedFloor - row * g.mini * 0.8 };
   }
 
@@ -432,7 +568,7 @@ button { font: inherit; color: inherit; }
     }
     sound("thunk");
     packedOne(b);
-    if (truck.state === "parked" && truck.items.length >= TRUCK_LOAD && truck.reserved === 0) { truck.state = "full"; truck.t = 0; }
+    if (truck.state === "parked" && truck.items.length >= truck.cap && truck.reserved === 0) { truck.state = "full"; truck.t = 0; }
   }
 
   function stepTruck(dt) {
@@ -443,8 +579,8 @@ button { font: inherit; color: inherit; }
       truck.offset = truck.from * (1 - e);
       if (truck.t >= 1) {
         truck.offset = 0; truck.state = "parked";
-        while (truck.pending.length && truck.items.length < TRUCK_LOAD) truck.items.push(truck.pending.shift());
-        if (truck.items.length >= TRUCK_LOAD) { truck.state = "full"; truck.t = 0; }
+        while (truck.pending.length && truck.items.length < truck.cap) truck.items.push(truck.pending.shift());
+        if (truck.items.length >= truck.cap) { truck.state = "full"; truck.t = 0; }
       }
     } else if (truck.state === "full") {
       truck.t += dt;
@@ -455,8 +591,18 @@ button { font: inherit; color: inherit; }
     } else if (truck.state === "go") {
       truck.v += 1500 * K * dt; truck.offset += truck.v * dt;
       if (truck.x0 + truck.offset > W + 20) {
-        truck.items = []; truck.color = (truck.color + 1) % TRUCK_COLORS.length;
+        var wasRush = truck.kind === "rush", tookPuppy = !!(puppy && puppy.inTruck);
+        truck.items = [];
+        if (truck.after) { setTruck(truck.after); truck.after = null; }
+        else if (truck.kind !== "normal") setTruck({ cap: TRUCK_LOAD, kind: "normal" });
+        if (truck.kind === "normal") truck.color = (truck.color + 1) % TRUCK_COLORS.length;
         truck.state = "come"; truck.t = 0; truck.from = truck.w + 60 * K; truck.offset = truck.from;
+        if (game.mode === "level" && L && ((L.key === "rush" && wasRush) || (L.key === "puppy" && tookPuppy))) {
+          if (tookPuppy) puppy = null;
+          finishLevel();
+        } else if (game.mode === "normal") {
+          tripDone();
+        }
       }
     }
   }
@@ -464,14 +610,15 @@ button { font: inherit; color: inherit; }
   function packedOne(b) {
     packed++;
     if (packed > best) { best = packed; save("kids-pack-best", String(best)); }
-    if (!hintGone) { hintGone = true; el("hint").classList.add("gone"); }
-    if (packed % 10 === 0) {
+    hideHint();
+    if (packed % 10 === 0 && game.mode === "normal") {
       cheer = { life: 2.4, total: 2.4, text: "太棒了！🎉", sub: "已经打包 " + packed + " 个" };
       sound("cheer");
       for (var i = 0; i < 6; i++) confetti(W * (0.1 + i * 0.16), H * 0.55, 22, 620);
     }
-    collect(b.si);
+    if (b.si >= 0) collect(b.si);
     showScore();
+    if (game.mode === "level" && L) levelPacked(b);
   }
 
   // ---------------------------------------------------------------- 贴纸本 ----
@@ -492,6 +639,8 @@ button { font: inherit; color: inherit; }
       for (var i = 0; i < 8; i++) confetti(W * (0.06 + i * 0.125), H * 0.6, 26, 680);
     }
   }
+
+  function starText(n) { var s = ""; for (var i = 0; i < 3; i++) s += i < n ? "⭐" : "☆"; return s; }
 
   function renderBook() {
     var grid = el("book-grid");
@@ -517,6 +666,21 @@ button { font: inherit; color: inherit; }
       }
       grid.appendChild(cell);
     });
+    // 大关卡奖章：得到的可以点一下再玩一次。
+    var mg = el("medal-grid");
+    mg.innerHTML = "";
+    for (var n = 1; n <= 5; n++) {
+      (function (n) {
+        var def = LEVELS[n], got = medals[n], m = document.createElement("button");
+        m.type = "button";
+        m.className = "medal " + (got ? "got" : "lock");
+        m.innerHTML = "<b>" + def.medal + "</b><span>" + def.short + "</span><span class=\"stars\">" + (got ? starText(got) : "🔒") + "</span>";
+        m.setAttribute("aria-label", "大关卡 " + n + " " + def.name + (got ? "，" + got + " 颗星，点一下再玩" : "，还没通关"));
+        if (got) m.addEventListener("click", function () { closeBook(); unlockAudio(); startIntro(n, true); });
+        else m.tabIndex = -1;
+        mg.appendChild(m);
+      })(n);
+    }
     var done = collected.length === STICKERS.length;
     el("book-count").textContent = collected.length + "/" + STICKERS.length;
     el("book-foot").textContent = done
@@ -542,12 +706,387 @@ button { font: inherit; color: inherit; }
   });
   document.addEventListener("keydown", function (event) { if (event.key === "Escape" && !el("book").hidden) closeBook(); });
 
-  // 🧹：台上没打包的箱子都扫到左边，再掉下来一批新的。
-  function sweep() {
-    drags = {};
-    boxes.forEach(function (b) { b.drag = null; if (!b.leaving && !b.done) { b.leaving = 1; b.vx = -200 * K; } });
+  // 🧹：台上没打包的箱子都扫到左边，再掉下来一批新的（大关卡开场时只扫不掉）。
+  function sweep(noRespawn) {
+    drags = {}; bossTouch = {};
+    boxes.forEach(function (b) {
+      b.drag = null;
+      if (!b.leaving && !b.done && !b.boss) { b.carried = false; b.leaving = 1; b.vx = -200 * K; }
+    });
+    if (puppy && puppy.carry) { puppy.carry = null; puppy.state = "roam"; puppy.wait = 2; }
     sound("sweep");
-    setTimeout(function () { for (var i = 0; i < 5; i++) spawn(RIGHT * (0.12 + i * 0.19)); lastSpawn = performance.now(); }, 450);
+    if (noRespawn) return;
+    setTimeout(function () {
+      if (!spawnRule()) return;
+      for (var i = 0; i < 5; i++) spawn(RIGHT * (0.12 + i * 0.19));
+      lastSpawn = performance.now();
+    }, 450);
+  }
+
+  // ---------------------------------------------------------------- 大关卡：开场、进行、结束 ----
+  function tripDone() {
+    trips++;
+    if (trips >= LEVEL_EVERY) { trips = 0; save("kids-pack-trips", "0"); startIntro(nextLevel, false); }
+    else save("kids-pack-trips", String(trips));
+    showTrip();
+  }
+
+  function startIntro(no, replay) {
+    if (game.mode !== "normal" || !LEVELS[no]) return;
+    game.mode = "intro"; game.t = 0; game.no = no; game.replay = !!replay; game.counted = 0;
+    hideHint(); closeBook(); showTrip();
+    sweep(true);
+    if (LEVELS[no].key === "rush") {
+      // 换一辆大卡车：现在这辆开走，大卡车开进来。
+      var big = { cap: 8, kind: "rush" };
+      if (truck.state === "come") setTruck(big);
+      else { truck.after = big; if (truck.state === "parked") { truck.state = "full"; truck.t = 0.4; } }
+    }
+    sound("level");
+  }
+
+  function startLevel() {
+    var no = game.no, def = LEVELS[no];
+    game.mode = "level"; game.t = 0;
+    L = { no: no, key: def.key, def: def, t: 0, count: 0, goal: 0, goalDone: false, endIn: null };
+    floats.push({ x: RIGHT / 2, y: H * 0.42, life: 1.2, text: "开始！", strong: true, big: true });
+    sound("go");
+    lastSpawn = performance.now() - 3000;
+    if (def.key === "rush") {
+      L.goal = 8; L.time = 60; L.extended = 0; L.lastSecond = 60; musicBpm = 100;
+      for (var i = 0; i < 4; i++) spawn(RIGHT * (0.15 + i * 0.22));
+    } else if (def.key === "boss") {
+      L.hiccupIn = 6; L.landed = false; musicBpm = 112; spawnBoss();
+    } else if (def.key === "rain") {
+      L.goal = 6; L.wetCount = 0; L.dark = 0; L.flash = 0; L.thunderIn = 6; musicBpm = 94; rain = [];
+      for (var j = 0; j < 4; j++) spawn(RIGHT * (0.15 + j * 0.22));
+    } else if (def.key === "puppy") {
+      L.goal = 8; L.mischief = 0; musicBpm = 108; ball = null;
+      puppy = { x: -60 * K, dir: 1, state: "enter", t: 0, wait: 0, carry: null, target: null, happy: 0, jump: -1 };
+      for (var m = 0; m < 4; m++) spawn(RIGHT * (0.15 + m * 0.22));
+    } else if (def.key === "belt") {
+      L.goal = 10; L.wave = 0; L.inWave = 0; L.recycled = 0; L.spawnT = 0.3; nextWave();
+    }
+    showTrip();
+  }
+
+  function levelPacked(b) {
+    if (L.key === "rain" || L.key === "puppy") {
+      L.count++;
+      if (L.count >= L.goal && !L.goalDone) {
+        L.goalDone = true;
+        if (L.key === "rain") { L.endIn = 2.4; floats.push({ x: RIGHT / 2, y: H * 0.3, life: 2, text: "雨停啦！🌈", strong: true, big: true }); }
+        else puppyToTruck();
+      }
+    } else if (L.key === "belt") {
+      L.count++; L.inWave++;
+      if (L.inWave >= WAVES[L.wave - 1].goal && !L.goalDone) {
+        if (L.wave < WAVES.length) nextWave();
+        else { L.goalDone = true; BELT = 0; L.endIn = 1.2; }
+      }
+    }
+  }
+
+  function levelStars() {
+    // 星星给得宽一点：小朋友认真玩基本都能拿 2–3 颗。
+    if (L.key === "rush") return L.extended === 0 ? 3 : L.extended === 1 ? 2 : 1;
+    if (L.key === "boss") return L.t <= 45 ? 3 : L.t <= 90 ? 2 : 1;
+    if (L.key === "rain") return L.wetCount <= 2 ? 3 : L.wetCount <= 5 ? 2 : 1;
+    if (L.key === "puppy") return L.mischief <= 3 ? 3 : L.mischief <= 6 ? 2 : 1;
+    return L.recycled <= 3 ? 3 : L.recycled <= 7 ? 2 : 1;
+  }
+
+  function finishLevel() {
+    if (!L || game.mode !== "level") return;
+    var stars = levelStars(), prev = medals[L.no] || 0;
+    if (stars > prev) { medals[L.no] = stars; save("kids-pack-medals", JSON.stringify(medals)); }
+    if (!game.replay) { nextLevel = L.no % 5 + 1; save("kids-pack-next-level", String(nextLevel)); }
+    game.mode = "outro"; game.t = 0; game.stars = stars; game.best = Math.max(prev, stars); game.newMedal = !prev;
+    L.ended = true; L.goalDone = true;
+    BELT = 0; musicBpm = 100; ball = null; bossTouch = {};
+    if (puppy && !puppy.inTruck) { puppy.state = "leave"; if (puppy.carry) dropCarry(); }
+    if (!prev) el("book-dot").hidden = false;
+    sound("cheer");
+    for (var i = 0; i < 8; i++) confetti(W * (0.06 + i * 0.125), H * 0.62, 24, 700);
+  }
+
+  function endOutro() {
+    if (game.mode !== "outro") return;
+    game.mode = "normal"; game.t = 0;
+    L = null; puppy = null; ball = null; rain = []; BELT = 0; musicBpm = 100;
+    boxes = boxes.filter(function (b) { return !b.boss; });
+    showTrip();
+    if (liveCount() < 3) for (var i = 0; i < 5; i++) spawn(RIGHT * (0.12 + i * 0.19));
+    lastSpawn = performance.now();
+  }
+
+  function stepGame(dt, live) {
+    if (game.mode === "intro") {
+      var before = game.t;
+      game.t += dt;
+      [1.2, 2.2, 3.2].forEach(function (mark) { if (before < mark && game.t >= mark) sound("count"); });
+      if (game.t >= 4.2) startLevel();
+      return;
+    }
+    if (game.mode === "outro") {
+      game.t += dt;
+      if (game.t > 5.5) endOutro();
+    }
+    if (!L) return;
+    L.t += dt;
+    if (game.mode === "level") {
+      if (L.endIn != null) { L.endIn -= dt; if (L.endIn <= 0) { L.endIn = null; finishLevel(); return; } }
+      if (L.key === "rush") stepRush(dt);
+      else if (L.key === "boss") stepBoss(dt);
+      else if (L.key === "belt") stepBelt(dt);
+    }
+    if (L && L.key === "rain") stepRain(dt, live);
+    if (puppy) stepPuppy(dt);
+    if (ball) stepBall(dt);
+  }
+
+  // ---- ① 大卡车要开啦：闹钟倒计时，越到最后音乐越快；时间到了司机再等一会儿（不会输）
+  function stepRush(dt) {
+    if (truck.kind !== "rush" || truck.state !== "parked") return;
+    L.time -= dt;
+    var sec = Math.ceil(L.time);
+    if (L.time < 10 && sec !== L.lastSecond && sec >= 0) sound("tick");
+    L.lastSecond = sec;
+    if (L.time <= 0) {
+      L.time = 20; L.extended++;
+      floats.push({ x: RIGHT / 2, y: H * 0.32, life: 2, text: "司机说：再等你一会儿！", strong: true, big: true });
+      sound("beep");
+    }
+    musicBpm = 100 + 36 * clamp(1 - L.time / 60, 0, 1);
+  }
+
+  // ---- ② 巨无霸箱子：几十个泡泡，时不时打个嗝又鼓起几个
+  function spawnBoss() {
+    var w = Math.round(Math.min(RIGHT * 0.6, 460 * K)), h = Math.round(w * 0.62);
+    var b = { id: ++boxSeq, x: (RIGHT - w) / 2, y: -h - 40 * K, w: w, h: h, vx: 0, vy: 0, tilt: 0, squash: 0, si: -1,
+      emoji: "🎁", sticker: "#d62828", paper: BOSS_PAPER, wrap: null, leaving: 0, done: false, drag: null,
+      grounded: false, py: 0, fly: null, flyScale: 1, wet: 0, boss: true, burst: 0 };
+    b.wrap = bubbleGrid(b, clamp(w / 20, 10, 28));
+    L.boss = b; L.total = b.wrap.length;
+    boxes.push(b);
+  }
+  function bossLeft() { return L.boss ? L.boss.wrap.filter(function (x) { return !x.popped; }).length : 0; }
+  function stepBoss(dt) {
+    var b = L.boss;
+    if (!b) return;
+    if (!L.landed && b.grounded) {
+      L.landed = true; shake = 0.5; sound("boss");
+      floats.push({ x: b.x + b.w / 2, y: b.y - 20 * K, life: 1.2, text: "咚！", strong: true, big: true });
+    }
+    if (b.done) { b.burst += dt; if (b.burst > 0.45) b.gone = true; return; }
+    L.hiccupIn -= dt;
+    if (L.hiccupIn <= 0 && L.landed) {
+      L.hiccupIn = 6 + Math.random() * 3;
+      var left = bossLeft(), popped = b.wrap.filter(function (x) { return x.popped; });
+      if (left > 6 && popped.length) {
+        for (var i = 0; i < 3 && popped.length; i++) popped.splice(Math.floor(Math.random() * popped.length), 1)[0].popped = false;
+        b.squash = 0.18;
+        floats.push({ x: b.x + b.w / 2, y: b.y - 14 * K, life: 1.2, text: "嗝～", strong: true, big: true });
+        sound("boing");
+      }
+    }
+  }
+  function bossDefeated(b) {
+    b.done = true; L.goalDone = true; shake = 0.6; bossTouch = {};
+    sound("cheer");
+    floats.push({ x: b.x + b.w / 2, y: b.y - 10 * K, life: 2, text: "打败巨无霸啦！", strong: true, big: true });
+    for (var i = 0; i < 6; i++) confetti(b.x + b.w * (0.1 + i * 0.16), b.y + b.h * 0.5, 30, 700);
+    L.endIn = 1.6;
+  }
+
+  // ---- ③ 暴风雨来啦：没包泡泡纸、又不在雨棚下的箱子会被淋湿，湿了要擦三下
+  function shedWidth() { return Math.round(RIGHT * 0.24); }
+  function roofY() { return FLOOR - Math.round(200 * K); }
+  function stepRain(dt, live) {
+    var raining = game.mode === "level" && !L.goalDone;
+    L.dark += ((raining ? 1 : 0) - L.dark) * Math.min(1, dt * (raining ? 1.2 : 0.8));
+    L.flash = Math.max(0, L.flash - dt * 3);
+    var sw = shedWidth(), ry = roofY();
+    if (raining) {
+      var n = (REDUCED ? 60 : 260) * (W / 1000) * dt;
+      for (var i = 0; i < n; i++) rain.push({ x: Math.random() * W, y: -20, v: (700 + Math.random() * 300) * K });
+      L.thunderIn -= dt;
+      if (L.thunderIn <= 0) { L.flash = 1; sound("thunder"); L.thunderIn = 9 + Math.random() * 6; }
+      live.forEach(function (b) {
+        if (b.drag || b.wrap || b.done || b.soaked || b.boss) return;
+        var sheltered = b.x + b.w / 2 < sw && b.y + b.h > ry + 10 * K;
+        if (sheltered) return;
+        b.wet = Math.min(1, (b.wet || 0) + dt / 3);
+        if (b.wet >= 1) {
+          b.soaked = true; b.dry = 0; L.wetCount++;
+          floats.push({ x: b.x + b.w / 2, y: b.y - 8 * K, life: 1.4, text: "湿了！擦一擦" });
+          sound("drip");
+        }
+      });
+    }
+    rain = rain.filter(function (d) {
+      d.y += d.v * dt;
+      return d.y < FLOOR && !(d.x < sw && d.y > ry);
+    });
+  }
+
+  // ---- ④ 捣蛋小狗：跑来跑去撞箱子、叼走小箱子；点它扔个球，它就去追球玩
+  var PUP = 56;
+  function hitPuppy(p) {
+    if (!puppy || puppy.inTruck || puppy.state === "leave" || puppy.jump >= 0) return false;
+    var s = PUP * K;
+    return Math.abs(p.x - puppy.x) < s * 0.6 && p.y > FLOOR - s * 1.1 && p.y < FLOOR + 6 * K;
+  }
+  function throwBall() {
+    var P = puppy;
+    if (!P || P.state === "toTruck" || P.state === "chase") return;
+    if (P.carry) dropCarry();
+    var dir = P.x < RIGHT / 2 ? 1 : -1;
+    ball = { x: P.x + dir * 20 * K, y: FLOOR - 60 * K, vx: dir * (420 + Math.random() * 220) * K, vy: -780 * K, spin: 0, age: 0 };
+    P.state = "chase";
+    floats.push({ x: P.x, y: FLOOR - PUP * K - 10 * K, life: 1.1, text: "接球！", strong: true });
+    sound("bark");
+  }
+  function takeFromPuppy(b) {
+    b.carried = false;
+    if (puppy && puppy.carry === b) { puppy.carry = null; puppy.state = "roam"; puppy.wait = 2.5; }
+    floats.push({ x: b.x + b.w / 2, y: b.y - 8 * K, life: 1, text: "拿回来啦！" });
+  }
+  function dropCarry() {
+    var b = puppy.carry;
+    puppy.carry = null;
+    if (b) { b.carried = false; b.vy = 0; b.vx = 0; }
+  }
+  function validTarget(b) {
+    return !b.leaving && !b.done && !b.gone && !b.drag && !b.carried && !b.boss &&
+      b.y + b.h >= FLOOR - 2 && b.x + b.w < RIGHT - 4;
+  }
+  function puppyToTruck() { if (puppy) { if (puppy.carry) dropCarry(); puppy.state = "toTruck"; ball = null; } }
+  function moveToward(P, x, speed, dt) {
+    var d = x - P.x;
+    P.dir = d >= 0 ? 1 : -1;
+    var stepLen = speed * K * dt;
+    if (Math.abs(d) <= stepLen) { P.x = x; return true; }
+    P.x += P.dir * stepLen;
+    P.running = true;
+    return false;
+  }
+  function stepPuppy(dt) {
+    var P = puppy, s = PUP * K;
+    P.t += dt; P.running = false;
+    if (P.state === "leave") { moveToward(P, -120 * K, 320, dt); if (P.x < -100 * K) puppy = null; return; }
+    if (P.inTruck) return;
+    if (P.jump >= 0) {
+      P.jump += dt / 0.55;
+      var g = truckGeo();
+      P.x = P.jx + (g.bedX + g.bedW * 0.5 - P.jx) * Math.min(1, P.jump);
+      if (P.jump >= 1) {
+        P.jump = -1; P.inTruck = true;
+        truck.state = "full"; truck.t = 0;
+        floats.push({ x: g.bedX + g.bedW / 2, y: FLOOR - 110 * K, life: 1.6, text: "汪汪！一起出发！", strong: true });
+        sound("bark");
+      }
+      return;
+    }
+    switch (P.state) {
+      case "enter":
+        if (moveToward(P, RIGHT * 0.3, 260, dt)) { P.state = "roam"; P.wait = 2; }
+        break;
+      case "roam":
+        P.wait -= dt;
+        if (P.wanderX == null || Math.abs(P.wanderX - P.x) < 4) P.wanderX = s + Math.random() * Math.max(10, RIGHT - 2 * s);
+        moveToward(P, P.wanderX, 70, dt);
+        if (P.wait <= 0) {
+          var options = boxes.filter(validTarget);
+          if (options.length) { P.target = pick(options); P.state = "toBox"; } else P.wait = 1.5;
+        }
+        break;
+      case "toBox":
+        var b = P.target;
+        if (!b || !validTarget(b)) { P.state = "roam"; P.wait = 1.5; break; }
+        moveToward(P, b.x + b.w / 2, 240, dt);
+        if (Math.abs(b.x + b.w / 2 - P.x) < b.w / 2 + s * 0.2) {
+          L.mischief++;
+          if (b.w <= 100 * K && !b.wrap) {
+            b.carried = true; P.carry = b; P.state = "carry";
+            floats.push({ x: P.x, y: FLOOR - s - 12 * K, life: 1, text: "汪！叼走啦" });
+          } else {
+            b.vx = P.dir * 650 * K; b.vy = -380 * K; b.grounded = false;
+            floats.push({ x: P.x, y: FLOOR - s - 12 * K, life: 1, text: "汪！" });
+            P.state = "roam"; P.wait = 2.5 + Math.random() * 1.5;
+          }
+          sound("bark");
+        }
+        break;
+      case "carry":
+        var c = P.carry;
+        if (!c || !c.carried) { P.carry = null; P.state = "roam"; P.wait = 2; break; }
+        moveToward(P, s * 0.5, 200, dt);
+        c.x = P.x - c.w / 2 - 6 * K; c.y = FLOOR - s * 0.78 - c.h; c.vx = 0; c.vy = 0; c.grounded = false;
+        if (P.x <= s * 0.5 + 1) { dropCarry(); floats.push({ x: P.x + 20 * K, y: FLOOR - s - 12 * K, life: 1, text: "汪汪！" }); P.state = "roam"; P.wait = 3; }
+        break;
+      case "chase":
+        if (!ball) { P.state = "roam"; P.wait = 2; break; }
+        moveToward(P, ball.x, 330, dt);
+        if (ball.age > 0.6 && Math.abs(ball.x - P.x) < s * 0.45 && ball.y > FLOOR - s * 0.6) {   // 球落地附近才叼得到
+          ball = null; P.state = "happy"; P.happy = 2.6;
+          floats.push({ x: P.x, y: FLOOR - s - 12 * K, life: 1.4, text: "❤️" });
+          sound("bark");
+        }
+        break;
+      case "happy":
+        P.happy -= dt;
+        if (P.happy <= 0) { P.state = "roam"; P.wait = 2.5; }
+        break;
+      case "toTruck":
+        if (truck.state !== "parked") break;
+        var g2 = truckGeo();
+        if (moveToward(P, g2.bedX - s * 0.2, 280, dt)) { P.jx = P.x; P.jump = 0; P.state = "jump"; }
+        break;
+    }
+  }
+  function stepBall(dt) {
+    var r = 14 * K;
+    ball.age += dt;
+    ball.vy += 2100 * K * dt;
+    ball.x += ball.vx * dt; ball.y += ball.vy * dt; ball.spin += ball.vx * dt / r;
+    if (ball.y > FLOOR - r) { ball.y = FLOOR - r; ball.vy = -ball.vy * 0.55; if (Math.abs(ball.vy) < 90 * K) ball.vy = 0; ball.vx *= 0.85; }
+    if (ball.x < r) { ball.x = r; ball.vx = Math.abs(ball.vx) * 0.6; }
+    if (ball.x > RIGHT - r) { ball.x = RIGHT - r; ball.vx = -Math.abs(ball.vx) * 0.6; }
+  }
+
+  // ---- ⑤ 传送带快跑：三波，一波比一波快；没打包好就跑到头的箱子会被送回左边重来
+  function nextWave() {
+    L.wave++; L.inWave = 0;
+    var w = WAVES[L.wave - 1];
+    BELT = w.speed * K; musicBpm = 100 + (L.wave - 1) * 10; L.spawnT = Math.min(L.spawnT, 0.8);
+    if (L.wave > 1) {
+      floats.push({ x: RIGHT / 2, y: H * 0.32, life: 1.8, text: "第 " + L.wave + " 波！更快啦！", strong: true, big: true });
+      sound("level");
+    }
+  }
+  function stepBelt(dt) {
+    if (L.goalDone) return;
+    L.spawnT -= dt;
+    if (L.spawnT <= 0) {
+      L.spawnT = WAVES[L.wave - 1].every;
+      if (liveCount() < 5) {
+        var b = spawn(30 * K + 50 * K);
+        if (b && L.wave === WAVES.length && !L.goldenDone) {
+          L.goldenDone = true;
+          b.golden = true; b.paper = GOLD; b.si = -1; b.emoji = "⭐"; b.sticker = "#f4b400";
+        }
+      }
+    }
+  }
+  function recycleAtBeltEnd(live) {
+    live.forEach(function (b) {
+      if (b.drag || b.done || b.boss || !b.grounded || b.x + b.w < RIGHT - 1) return;
+      L.recycled++;
+      floats.push({ x: RIGHT - 60 * K, y: FLOOR - b.h - 20 * K, life: 1.4, text: "回到起点再来～" });
+      sound("thunk");
+      b.x = 6 * K; b.y = -b.h - 30 * K; b.vx = 0; b.vy = 0; b.grounded = false; b.py = b.y;
+    });
   }
 
   // ---------------------------------------------------------------- 物理 ----
@@ -562,13 +1101,17 @@ button { font: inherit; color: inherit; }
 
   function step(dt) {
     var now = performance.now();
-    if (now - lastSpawn > 3800 && liveCount() < Math.min(7, MAX_BOXES)) { spawn(); lastSpawn = now; }
+    var rule = spawnRule();
+    if (rule && now - lastSpawn > rule.every && liveCount() < Math.min(rule.max, MAX_BOXES)) { spawn(); lastSpawn = now; }
     stepTruck(dt);
-    var live = boxes.filter(function (b) { return !b.leaving; });
+    shake = Math.max(0, shake - dt);
+    beltPos += BELT * dt;
+    var live = boxes.filter(function (b) { return !b.leaving && !b.carried && !b.gone; });
     var gravity = 2100 * K, g = truckGeo();
     live.forEach(function (b) { b.py = b.y; });
 
     boxes.forEach(function (b) {
+      if (b.gone) return;
       if (b.fly) {
         // 打包好的箱子划一道弧线，缩小装进车斗。
         var f = b.fly;
@@ -588,6 +1131,7 @@ button { font: inherit; color: inherit; }
         b.x += b.vx * dt; b.y += b.vy * dt; b.tilt = clamp(b.tilt - dt * 2, -0.5, 0.5);
         return;
       }
+      if (b.carried) { b.tilt += (0.25 * (puppy ? -puppy.dir : 0) - b.tilt) * 0.2; return; }  // 小狗叼着走
       if (b.drag) {
         var d = b.drag, tx = d.last.x - d.dx, ty = d.last.y - d.dy;
         b.vx = (tx - b.x) / Math.max(dt, 1 / 120); b.vy = (ty - b.y) / Math.max(dt, 1 / 120);
@@ -597,8 +1141,9 @@ button { font: inherit; color: inherit; }
         b.vy += gravity * dt;
         b.vx *= b.grounded ? Math.pow(0.02, dt) : Math.pow(0.7, dt);
         if (b.grounded && Math.abs(b.vx) < 6) b.vx = 0;
+        if (b.grounded && BELT && !b.boss) b.vx = BELT;          // 传送带带着走
         b.x += b.vx * dt; b.y += b.vy * dt;
-        var lean = Math.abs(b.vx) > 40 ? clamp(b.vx / 4000, -0.2, 0.2) : 0;
+        var lean = Math.abs(b.vx) > 40 && !BELT ? clamp(b.vx / 4000, -0.2, 0.2) : 0;
         b.tilt += (lean - b.tilt) * 0.2;
         if (Math.abs(b.tilt) < 0.002) b.tilt = 0;
       }
@@ -659,6 +1204,9 @@ button { font: inherit; color: inherit; }
       }
     });
 
+    if (BELT && L && L.key === "belt" && game.mode === "level") recycleAtBeltEnd(live);
+    stepGame(dt, live);
+
     boxes = boxes.filter(function (b) {
       if (b.gone) return false;
       if (b.leaving && !b.fly) return b.x + b.w > -40 && b.y + b.h > -600;
@@ -680,9 +1228,16 @@ button { font: inherit; color: inherit; }
 
   function draw() {
     ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    if (shake > 0 && !REDUCED) ctx.translate((Math.random() - 0.5) * 14 * K * shake, (Math.random() - 0.5) * 14 * K * shake);
+    drawSky();
     drawBench();
+    drawShed();
     drawTruck();
     boxes.forEach(drawBox);
+    drawPuppy();
+    drawBall();
+    drawRain();
     bits.forEach(function (p) {
       ctx.globalAlpha = clamp(p.life * 2, 0, 1); ctx.fillStyle = p.color;
       if (p.square) ctx.fillRect(p.x - p.s / 2, p.y - p.s / 2, p.s, p.s * 0.6);
@@ -698,19 +1253,91 @@ button { font: inherit; color: inherit; }
       ctx.fillStyle = f.strong ? "#1f9d55" : "#24323a"; ctx.fillText(f.text, f.x, f.y);
     });
     ctx.globalAlpha = 1;
-    if (!liveCount()) {
+    if (!liveCount() && game.mode === "normal") {
       ctx.fillStyle = "#56707c"; ctx.font = "600 " + Math.round(20 * K) + "px " + FONT;
       ctx.fillText("点一下，来一箱 📦", RIGHT / 2, FLOOR / 2);
     }
+    ctx.restore();
+    drawLevelPill();
     if (cheer) drawCheer();
+    if (game.mode === "intro") drawIntro();
+    else if (game.mode === "outro") drawOutro();
+  }
+
+  function drawSky() {
+    if (!L || L.key !== "rain") return;
+    var a = L.dark;
+    if (a > 0.01) {
+      ctx.fillStyle = "rgba(45,60,85," + (0.42 * a).toFixed(3) + ")"; ctx.fillRect(0, 0, W, H);
+      // 飘过的乌云
+      ctx.fillStyle = "rgba(110,122,140," + (0.85 * a).toFixed(3) + ")";
+      for (var i = 0; i < 5; i++) {
+        var cx = ((i * 0.27 + L.t * 0.02) % 1.3 - 0.15) * W, cy = (70 + (i % 2) * 40) * K + SAFE_TOP, r = (60 + (i % 3) * 18) * K;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.arc(cx + r * 0.9, cy + r * 0.15, r * 0.8, 0, Math.PI * 2);
+        ctx.arc(cx - r * 0.9, cy + r * 0.2, r * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    if (L.flash > 0) { ctx.fillStyle = "rgba(255,255,255," + (0.32 * L.flash).toFixed(3) + ")"; ctx.fillRect(0, 0, W, H); }
+    if (L.goalDone) {
+      // 雨停了：彩虹
+      var alpha = clamp((1 - L.dark) * 1.3, 0, 1), rad = Math.min(RIGHT * 0.45, FLOOR * 0.75), band = 11 * K;
+      var colors = ["#ff6b6b", "#ffa94d", "#ffd43b", "#69db7c", "#4dabf7", "#9775fa"];
+      ctx.globalAlpha = alpha * 0.85; ctx.lineWidth = band;
+      colors.forEach(function (c, n) {
+        ctx.strokeStyle = c; ctx.beginPath(); ctx.arc(RIGHT / 2, FLOOR, rad - n * band, Math.PI, 0); ctx.stroke();
+      });
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawShed() {
+    if (!L || L.key !== "rain") return;
+    var sw = shedWidth(), ry = roofY(), post = 6 * K;
+    ctx.fillStyle = "#8a6a48";
+    ctx.fillRect(4 * K, ry, post, FLOOR - ry); ctx.fillRect(sw - post - 4 * K, ry, post, FLOOR - ry);
+    for (var i = 0; i < 6; i++) {
+      ctx.fillStyle = i % 2 ? "#ffffff" : "#ef476f";
+      var x0 = -10 * K + i * (sw + 30 * K) / 6;
+      ctx.beginPath();
+      ctx.moveTo(x0, ry); ctx.lineTo(x0 + (sw + 30 * K) / 6, ry);
+      ctx.lineTo(x0 + (sw + 30 * K) / 6 + 4 * K, ry - 22 * K); ctx.lineTo(x0 + 4 * K, ry - 22 * K); ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = "#000"; ctx.font = Math.round(22 * K) + "px " + EMOJI_FONT; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.fillText("☂️", sw / 2, ry - 26 * K);
+  }
+
+  function drawRain() {
+    if (!rain.length) return;
+    ctx.strokeStyle = "rgba(210,230,255,.75)"; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    rain.forEach(function (d) { ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - 2 * K, d.y + 14 * K); });
+    ctx.stroke();
   }
 
   function drawBench() {
     var top = Math.round(10 * K);
-    ctx.fillStyle = "#e3ad72"; ctx.fillRect(0, FLOOR, W, top);
+    var belt = L && L.key === "belt" && game.mode !== "intro";
+    ctx.fillStyle = belt ? "#55626b" : "#e3ad72"; ctx.fillRect(0, FLOOR, belt ? RIGHT : W, top);
+    if (belt) {
+      // 传送带：会动的纹路和滚轮
+      ctx.fillStyle = "#e3ad72"; ctx.fillRect(RIGHT, FLOOR, W - RIGHT, top);
+      ctx.fillStyle = "rgba(255,255,255,.35)";
+      var gap = 22 * K, off = beltPos % gap;
+      for (var x = -gap + off; x < RIGHT; x += gap) ctx.fillRect(x, FLOOR + 2 * K, 8 * K, top - 4 * K);
+    }
     ctx.fillStyle = "#c98d55"; ctx.fillRect(0, FLOOR + top, W, H - FLOOR - top);
     ctx.fillStyle = "rgba(0,0,0,.12)";
     for (var gx = 0; gx < W; gx += Math.round(70 * K)) ctx.fillRect(gx, FLOOR + top, 1, H - FLOOR - top);
+    if (belt) {
+      var rr = 8 * K, spin = beltPos / rr;
+      for (var rx = 20 * K; rx < RIGHT; rx += 46 * K) {
+        ctx.fillStyle = "#3d4a52"; ctx.beginPath(); ctx.arc(rx, FLOOR + top + rr + 4 * K, rr, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#cfd8dc"; ctx.lineWidth = 2 * K; ctx.beginPath();
+        ctx.moveTo(rx, FLOOR + top + rr + 4 * K); ctx.lineTo(rx + Math.cos(spin) * rr * 0.8, FLOOR + top + rr + 4 * K + Math.sin(spin) * rr * 0.8); ctx.stroke();
+      }
+    }
     // 台面上往右的小箭头：打包好的箱子往货车那边送
     ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.font = "700 " + Math.round(16 * K) + "px " + FONT;
     ctx.textAlign = "right"; ctx.textBaseline = "middle";
@@ -718,7 +1345,7 @@ button { font: inherit; color: inherit; }
   }
 
   function drawTruck() {
-    var g = truckGeo(), color = TRUCK_COLORS[truck.color], k = K;
+    var g = truckGeo(), color = truck.kind === "rush" ? RUSH_COLOR : TRUCK_COLORS[truck.color], k = K;
     ctx.save();
     ctx.translate(0, -Math.sin(truck.bump * Math.PI) * 3 * k);
     // 车斗里已经装好的小箱子（先画，车斗侧板会挡住它们的下半截）
@@ -729,11 +1356,12 @@ button { font: inherit; color: inherit; }
       ctx.fillStyle = paper.tape; ctx.fillRect(s.cx - 2 * k, s.by - mh, 4 * k, mh * 0.45);
       ctx.strokeStyle = paper.edge; ctx.lineWidth = 1; roundRect(s.cx - mw / 2, s.by - mh, mw, mh, 2 * k); ctx.stroke();
     });
+    if (puppy && puppy.inTruck) drawDog(g.bedX + g.bedW / 2, g.sideTop + 6 * k, 1, 0.8, 0);
     // 车斗侧板 + 装了几个的小圆点
     ctx.fillStyle = color; roundRect(g.bedX, g.sideTop, g.bedW, g.base - g.sideTop, 4 * k); ctx.fill();
-    for (var i = 0; i < TRUCK_LOAD; i++) {
+    for (var i = 0; i < truck.cap; i++) {
       ctx.beginPath();
-      ctx.arc(g.bedX + 10 * k + i * (g.bedW - 20 * k) / (TRUCK_LOAD - 1), (g.sideTop + g.base) / 2, 3.2 * k, 0, Math.PI * 2);
+      ctx.arc(g.bedX + 10 * k + i * (g.bedW - 20 * k) / (truck.cap - 1), (g.sideTop + g.base) / 2, 3.2 * k, 0, Math.PI * 2);
       ctx.fillStyle = i < truck.items.length ? "#ffffff" : "rgba(0,0,0,.22)"; ctx.fill();
     }
     // 车头
@@ -747,6 +1375,21 @@ button { font: inherit; color: inherit; }
     ctx.beginPath(); ctx.arc(g.cabX + g.cabW * 0.8, g.cabTop + 33 * k, 2.2 * k, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = "#3a2a1a"; ctx.lineWidth = 1.6 * k; ctx.lineCap = "round";
     ctx.beginPath(); ctx.arc(g.cabX + g.cabW * 0.65, g.cabTop + 35 * k, 4 * k, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke();
+    // 大卡车车顶的闹钟
+    if (truck.kind === "rush" && L && L.key === "rush") {
+      var urgent = L.time < 10 && game.mode === "level";
+      var ccx = g.cabX + g.cabW / 2, ccy = g.cabTop - 16 * k, r = 13 * k;
+      ctx.save(); ctx.translate(ccx, ccy); ctx.rotate(urgent ? Math.sin(performance.now() / 40) * 0.15 : 0);
+      ctx.fillStyle = "#ffcc00";
+      ctx.beginPath(); ctx.arc(-r * 0.75, -r * 0.85, r * 0.4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(r * 0.75, -r * 0.85, r * 0.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = urgent ? "#e63946" : "#ff8c42"; ctx.lineWidth = 3 * k; ctx.stroke();
+      var ang = -Math.PI / 2 + Math.PI * 2 * (1 - clamp(L.time / 60, 0, 1));
+      ctx.strokeStyle = "#24323a"; ctx.lineWidth = 2 * k;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(ang) * r * 0.75, Math.sin(ang) * r * 0.75); ctx.stroke();
+      ctx.restore();
+    }
     // 底盘和轮子（开动时轮子会转）
     ctx.fillStyle = "#3d4a52"; ctx.fillRect(g.x + 4 * k, g.base - 2 * k, g.w - 8 * k, 6 * k);
     [g.x + 20 * k, g.x + g.w - 22 * k].forEach(function (wx) {
@@ -760,28 +1403,48 @@ button { font: inherit; color: inherit; }
   }
 
   function drawBox(b) {
-    var p = b.paper, r = 5 * K;
+    var p = b.paper, r = 5 * K * (b.boss ? 2 : 1);
     ctx.save();
+    if (b.boss && b.burst) ctx.globalAlpha = clamp(1 - b.burst / 0.45, 0, 1);
     // 对齐到屏幕的整像素，静止的箱子不会因为小数位置看起来发虚、闪。
     ctx.translate(Math.round((b.x + b.w / 2) * DPR) / DPR, Math.round((b.y + b.h) * DPR) / DPR);
     ctx.rotate(b.tilt);
-    ctx.scale((1 + b.squash) * b.flyScale, (1 - b.squash) * b.flyScale);
+    var grow = b.boss && b.burst ? 1 + b.burst : 1;
+    ctx.scale((1 + b.squash) * b.flyScale * grow, (1 - b.squash) * b.flyScale * grow);
     ctx.translate(-b.w / 2, -b.h);
     // 纸箱
     ctx.fillStyle = "rgba(0,0,0,.13)"; roundRect(3 * K, 4 * K, b.w, b.h, r); ctx.fill();
     ctx.fillStyle = p.body; roundRect(0, 0, b.w, b.h, r); ctx.fill();
     ctx.save(); roundRect(0, 0, b.w, b.h, r); ctx.clip();
     ctx.fillStyle = p.top; ctx.fillRect(0, 0, b.w, b.h * 0.22);
-    ctx.fillStyle = p.tape; ctx.fillRect(b.w / 2 - 6 * K, 0, 12 * K, b.h * 0.42); // 封箱胶带
+    ctx.fillStyle = p.tape; ctx.fillRect(b.w / 2 - 6 * K * (b.boss ? 2 : 1), 0, 12 * K * (b.boss ? 2 : 1), b.h * 0.42); // 封箱胶带
+    if (b.wet > 0) { ctx.fillStyle = "rgba(30,60,110," + (0.3 * b.wet).toFixed(3) + ")"; ctx.fillRect(0, 0, b.w, b.h); }
     ctx.restore();
-    ctx.strokeStyle = p.edge; ctx.lineWidth = 1.5; roundRect(0.75, 0.75, b.w - 1.5, b.h - 1.5, r); ctx.stroke();
+    ctx.strokeStyle = p.edge; ctx.lineWidth = b.boss ? 3 : 1.5; roundRect(0.75, 0.75, b.w - 1.5, b.h - 1.5, r); ctx.stroke();
     // 图案贴纸
-    var lh = Math.min(b.h * 0.42, 28 * K), lw = lh * 1.2, lx = 6 * K, ly = b.h - lh - 6 * K;
+    var lh = b.boss ? Math.min(b.h * 0.3, 64 * K) : Math.min(b.h * 0.42, 28 * K), lw = lh * 1.2, lx = 6 * K, ly = b.h - lh - 6 * K;
     ctx.fillStyle = "#fffdf8"; roundRect(lx, ly, lw, lh, 3 * K); ctx.fill();
     ctx.strokeStyle = b.sticker; ctx.lineWidth = 2 * K; roundRect(lx, ly, lw, lh, 3 * K); ctx.stroke();
     ctx.font = Math.round(lh * 0.72) + "px " + EMOJI_FONT; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillStyle = "#000"; ctx.fillText(b.emoji, lx + lw / 2, ly + lh / 2 + lh * 0.04);
-    drawFace(b);
+    drawFace(b, b.boss ? clamp(b.w / (100 * K), 1.5, 3.2) : 1);
+    if (b.boss) {
+      ctx.fillStyle = "#000"; ctx.font = Math.round(b.w * 0.2) + "px " + EMOJI_FONT; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      ctx.fillText("👑", b.w / 2, b.w * 0.02);
+    }
+    if (b.golden && !REDUCED && Math.random() < 0.15) {
+      bits.push({ x: b.x + Math.random() * b.w, y: b.y + Math.random() * b.h, vx: 0, vy: -40 * K, life: 0.5, color: "#fff6b0", s: 2.4 * K, square: false });
+    }
+    if (b.soaked) {
+      // 淋湿了：往下滴水
+      ctx.fillStyle = "rgba(120,180,230,.9)";
+      for (var dI = 0; dI < 3; dI++) {
+        var dx = b.w * (0.25 + dI * 0.25), dy = b.h + ((performance.now() / 6 + dI * 37) % (14 * K));
+        ctx.beginPath(); ctx.arc(dx, dy, 2.6 * K, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = "#000"; ctx.font = Math.round(16 * K) + "px " + EMOJI_FONT; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("💧", b.w - 10 * K, 10 * K);
+    }
     // 泡泡纸
     if (b.wrap) {
       ctx.fillStyle = "rgba(205,232,244,.5)"; roundRect(0, 0, b.w, b.h, r); ctx.fill();
@@ -797,7 +1460,7 @@ button { font: inherit; color: inherit; }
         }
       });
     }
-    if (b.done) {
+    if (b.done && !b.boss) {
       ctx.strokeStyle = "#1f9d55"; ctx.lineWidth = 3 * K; roundRect(3 * K, 3 * K, b.w - 6 * K, b.h - 6 * K, r); ctx.stroke();
       var cr = 11 * K, cx = b.w - 4 * K, cy = 4 * K;
       ctx.fillStyle = "#1f9d55"; ctx.beginPath(); ctx.arc(cx, cy, cr, 0, Math.PI * 2); ctx.fill();
@@ -807,21 +1470,117 @@ button { font: inherit; color: inherit; }
     ctx.restore();
   }
 
-  // 箱子上的小脸：平时笑，被拿起来「哦」，打包好了眯眼笑。
-  function drawFace(b) {
-    var fx = b.w * 0.68, fy = b.h * 0.5, e = Math.max(5, 7 * K), er = Math.max(1.8, 2.4 * K);
+  // 箱子上的小脸：平时笑，被拿起来「哦」，打包好了眯眼笑；巨无霸的脸更大。
+  function drawFace(b, s) {
+    var fx = b.w * (b.boss ? 0.64 : 0.68), fy = b.h * (b.boss ? 0.46 : 0.5), e = Math.max(5, 7 * K) * s, er = Math.max(1.8, 2.4 * K) * s;
     ctx.fillStyle = "rgba(255,120,140,.35)";
-    ctx.beginPath(); ctx.arc(fx - e - 4 * K, fy + 5 * K, 3.2 * K, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(fx + e + 4 * K, fy + 5 * K, 3.2 * K, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = ctx.strokeStyle = "#3a2a1a"; ctx.lineWidth = Math.max(1.5, 1.8 * K); ctx.lineCap = "round";
-    [-1, 1].forEach(function (s) {
+    ctx.beginPath(); ctx.arc(fx - e - 4 * K * s, fy + 5 * K * s, 3.2 * K * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(fx + e + 4 * K * s, fy + 5 * K * s, 3.2 * K * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = ctx.strokeStyle = "#3a2a1a"; ctx.lineWidth = Math.max(1.5, 1.8 * K) * Math.sqrt(s); ctx.lineCap = "round";
+    [-1, 1].forEach(function (side) {
       ctx.beginPath();
-      if (b.done) { ctx.arc(fx + s * e, fy + er, er * 1.5, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
-      else { ctx.arc(fx + s * e, fy, er, 0, Math.PI * 2); ctx.fill(); }
+      if (b.done) { ctx.arc(fx + side * e, fy + er, er * 1.5, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
+      else { ctx.arc(fx + side * e, fy, er, 0, Math.PI * 2); ctx.fill(); }
     });
     ctx.beginPath();
-    if (b.drag) { ctx.arc(fx, fy + 6 * K, 2.6 * K, 0, Math.PI * 2); ctx.stroke(); }
-    else { var m = b.done ? 5 * K : 3.6 * K; ctx.arc(fx, fy + 2.5 * K, m, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke(); }
+    if (b.drag || b.carried || (b.boss && b.squash > 0.05)) { ctx.arc(fx, fy + 6 * K * s, 2.6 * K * s, 0, Math.PI * 2); ctx.stroke(); }
+    else { var m = (b.done ? 5 : 3.6) * K * s; ctx.arc(fx, fy + 2.5 * K * s, m, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke(); }
+  }
+
+  function drawDog(x, baseY, dir, scale, bob) {
+    var s = PUP * K * scale;
+    ctx.save();
+    ctx.translate(x, baseY - bob);
+    if (dir > 0) ctx.scale(-1, 1);          // 表情符号里的小狗朝左，往右跑时翻过来
+    ctx.fillStyle = "rgba(0,0,0,.14)"; ctx.beginPath(); ctx.ellipse(0, 2 * K * scale, s * 0.42, s * 0.08, 0, 0, Math.PI * 2); ctx.fill();
+    // 彩色表情会沿用画笔的透明度：先换成不透明的颜色再画。
+    ctx.fillStyle = "#000"; ctx.font = Math.round(s) + "px " + EMOJI_FONT; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.fillText("🐕", 0, 0);
+    ctx.restore();
+  }
+  function drawPuppy() {
+    var P = puppy;
+    if (!P || P.inTruck) return;
+    var bob = P.running ? Math.abs(Math.sin(P.t * 14)) * 5 * K : 0, y = FLOOR - 2 * K;
+    if (P.jump >= 0) y -= Math.sin(Math.PI * Math.min(1, P.jump)) * 90 * K + (FLOOR - truckGeo().sideTop) * Math.min(1, P.jump);
+    if (P.state === "happy") bob = Math.abs(Math.sin(P.t * 18)) * 8 * K;
+    drawDog(P.x, y, P.dir, 1, bob);
+    if (P.state === "happy") {
+      ctx.fillStyle = "#000"; ctx.font = Math.round(18 * K) + "px " + EMOJI_FONT; ctx.textAlign = "center";
+      ctx.fillText("⚽", P.x + P.dir * PUP * K * 0.42, y - PUP * K * 0.35 - bob);
+    }
+  }
+  function drawBall() {
+    if (!ball) return;
+    ctx.save(); ctx.translate(ball.x, ball.y); ctx.rotate(ball.spin);
+    ctx.fillStyle = "#000"; ctx.font = Math.round(28 * K) + "px " + EMOJI_FONT; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("⚽", 0, 0);
+    ctx.restore();
+  }
+
+  // 大关卡进行中：上方一个小条，写着目标和进度（家长念给孩子听，孩子看进度条）。
+  function drawLevelPill() {
+    if (game.mode !== "level" || !L) return;
+    var text, prog = 0, urgent = false;
+    if (L.key === "rush") { text = "⏰ " + Math.max(0, Math.ceil(L.time)) + " 秒   📦 " + truck.items.length + "/8"; prog = truck.items.length / 8; urgent = L.time < 10; }
+    else if (L.key === "boss") { var left = bossLeft(); text = "👑 巨无霸还剩 " + left + " 个泡泡"; prog = L.total ? 1 - left / L.total : 0; }
+    else if (L.key === "rain") { text = "🌧️ 打包 " + L.count + "/" + L.goal + (L.wetCount ? "    💧 " + L.wetCount : ""); prog = L.count / L.goal; }
+    else if (L.key === "puppy") { text = "🐶 打包 " + L.count + "/" + L.goal; prog = L.count / L.goal; }
+    else { text = "🏁 第 " + L.wave + " 波    打包 " + L.count + "/" + L.goal; prog = L.count / L.goal; }
+    ctx.font = "800 " + Math.round(18 * Math.max(1, K * 0.85)) + "px " + FONT;
+    var tw = ctx.measureText(text).width, pw = tw + 44, ph = 44 * Math.max(1, K * 0.85), px = W / 2 - pw / 2, py = SAFE_TOP + 80;
+    var pulse = urgent ? 0.5 + 0.5 * Math.sin(performance.now() / 120) : 0;
+    ctx.fillStyle = urgent ? "rgba(255," + Math.round(235 - 60 * pulse) + "," + Math.round(235 - 60 * pulse) + ",.95)" : "rgba(255,255,255,.92)";
+    roundRect(px, py, pw, ph, ph / 2); ctx.fill();
+    ctx.fillStyle = urgent ? "#c92a2a" : "#24323a"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(text, W / 2, py + ph * 0.42);
+    ctx.fillStyle = "rgba(0,0,0,.08)"; roundRect(px + 18, py + ph - 9, pw - 36, 5, 2.5); ctx.fill();
+    ctx.fillStyle = urgent ? "#e63946" : "#1f9d55"; roundRect(px + 18, py + ph - 9, Math.max(5, (pw - 36) * clamp(prog, 0, 1)), 5, 2.5); ctx.fill();
+  }
+
+  function drawCard(scale) {
+    var cw = Math.min(W - 32, 560), ch = Math.min(H - 40, 380);
+    ctx.save();
+    ctx.translate(W / 2, H / 2); ctx.scale(scale, scale);
+    ctx.fillStyle = "#fffdf7"; roundRect(-cw / 2, -ch / 2, cw, ch, 26); ctx.fill();
+    return { w: cw, h: ch };
+  }
+  function drawIntro() {
+    var def = LEVELS[game.no], t = game.t;
+    ctx.fillStyle = "rgba(20,45,70,.45)"; ctx.fillRect(0, 0, W, H);
+    var card = drawCard(REDUCED ? 1 : Math.min(1, 0.6 + t * 3)), ch = card.h;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ff7a00"; ctx.font = "800 20px " + FONT; ctx.fillText("大关卡 " + game.no + " / 5", 0, -ch * 0.38);
+    ctx.font = "64px " + EMOJI_FONT; ctx.fillText(def.medal, 0, -ch * 0.18);
+    ctx.fillStyle = "#24323a"; ctx.font = "800 32px " + FONT; ctx.fillText(def.name, 0, ch * 0.02);
+    ctx.fillStyle = "#56707c"; ctx.font = "600 17px " + FONT; ctx.fillText(def.goal, 0, ch * 0.14, card.w - 40);
+    var n = t < 1.2 ? "" : t < 2.2 ? "3" : t < 3.2 ? "2" : "1";
+    if (n) {
+      var f = (t - 1.2) % 1;
+      ctx.fillStyle = "#ff7a00"; ctx.font = "900 " + Math.round(58 + 20 * (1 - f)) + "px " + FONT; ctx.fillText(n, 0, ch * 0.34);
+    } else {
+      ctx.fillStyle = "#8fa1a9"; ctx.font = "600 15px " + FONT; ctx.fillText("准备好了吗？", 0, ch * 0.34);
+    }
+    ctx.restore();
+  }
+  function drawOutro() {
+    var def = LEVELS[game.no], t = game.t;
+    ctx.fillStyle = "rgba(20,45,70,.4)"; ctx.fillRect(0, 0, W, H);
+    var card = drawCard(REDUCED ? 1 : Math.min(1, 0.6 + t * 3)), ch = card.h;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ff7a00"; ctx.font = "900 34px " + FONT; ctx.fillText("通关啦！🎉", 0, -ch * 0.34);
+    ctx.font = "64px " + EMOJI_FONT; ctx.fillText(def.medal, 0, -ch * 0.12);
+    for (var i = 0; i < 3; i++) {
+      var on = i < game.stars, pop = REDUCED ? 1 : clamp((t - 0.4 - i * 0.35) * 4, 0, 1);
+      ctx.save(); ctx.translate((i - 1) * 54, ch * 0.08); ctx.scale(pop, pop);
+      if (on) { ctx.font = "44px " + EMOJI_FONT; ctx.fillText("⭐", 0, 0); }
+      else { ctx.fillStyle = "#c9d6dd"; ctx.font = "800 44px " + FONT; ctx.fillText("☆", 0, 0); }
+      ctx.restore();
+    }
+    ctx.fillStyle = "#56707c"; ctx.font = "600 17px " + FONT;
+    ctx.fillText(game.newMedal ? "得到「" + def.name + "」奖章！在 📒 里能看到" : "最好成绩 " + starText(game.best), 0, ch * 0.26, card.w - 40);
+    if (t > 2) { ctx.fillStyle = "#8fa1a9"; ctx.font = "600 15px " + FONT; ctx.fillText("点一下继续", 0, ch * 0.38); }
+    ctx.restore();
   }
 
   function drawCheer() {
@@ -859,6 +1618,23 @@ button { font: inherit; color: inherit; }
     osc.connect(gain); gain.connect(audio.destination);
     osc.start(t); osc.stop(t + length + 0.02);
   }
+  function getNoise() {
+    if (!music.noise) {
+      var length = Math.floor(audio.sampleRate * 0.2), buffer = audio.createBuffer(1, length, audio.sampleRate), data = buffer.getChannelData(0);
+      for (var i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+      music.noise = buffer;
+    }
+    return music.noise;
+  }
+  function noise(filterType, freq, length, volume) {
+    var t = audio.currentTime, src = audio.createBufferSource(), filter = audio.createBiquadFilter(), gain = audio.createGain();
+    src.buffer = getNoise(); src.loop = true;
+    filter.type = filterType; filter.frequency.value = freq;
+    gain.gain.setValueAtTime(volume, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + length);
+    src.connect(filter); filter.connect(gain); gain.connect(audio.destination);
+    src.start(t); src.stop(t + length + 0.05);
+  }
   function sound(kind) {
     if (!soundOn || !audio || audio.state !== "running") return;
     // 戳破泡泡：很短的一声「啪」，从高往低掉，每次音高稍微不一样。
@@ -872,13 +1648,22 @@ button { font: inherit; color: inherit; }
     else if (kind === "beep") tone("square", 440, 440, 0.12, 0.05);
     else if (kind === "honk") { tone("square", 392, 392, 0.14, 0.06); tone("square", 392, 392, 0.22, 0.06, 0.2); }
     else if (kind === "cheer") { tone("triangle", 523, 523, 0.16, 0.14); tone("triangle", 659, 659, 0.16, 0.14, 0.14); tone("triangle", 784, 1046, 0.34, 0.14, 0.28); }
+    else if (kind === "level") { tone("triangle", 523, 523, 0.12, 0.12); tone("triangle", 784, 784, 0.24, 0.12, 0.12); }
+    else if (kind === "count") tone("sine", 660, 660, 0.18, 0.12);
+    else if (kind === "go") tone("triangle", 784, 1568, 0.3, 0.14);
+    else if (kind === "tick") tone("square", 1500, 1500, 0.03, 0.025);
+    else if (kind === "boing") tone("sine", 180, 420, 0.25, 0.14);
+    else if (kind === "boss") tone("sine", 110, 40, 0.45, 0.32);
+    else if (kind === "bark") { tone("square", 560, 380, 0.07, 0.05); tone("square", 600, 400, 0.08, 0.05, 0.11); }
+    else if (kind === "drip") tone("sine", 1100, 500, 0.09, 0.07);
+    else if (kind === "wipe") noise("highpass", 3000, 0.1, 0.05);
+    else if (kind === "thunder") noise("lowpass", 260, 1.2, 0.12);
   }
 
   // ---------------------------------------------------------------- 背景音乐 ----
-  // 一首自己写的轻快小曲（C 大调，每分钟 100 拍，16 小节一圈约 38 秒）：
+  // 一首自己写的轻快小曲（C 大调，平时每分钟 100 拍，16 小节一圈约 38 秒）：
   // 低音「咚」在每小节第 1、3 拍，和弦「嚓」在反拍，八音盒一样的旋律，再加一点很轻的沙锤。
-  // 全部由浏览器现场合成，不加载文件；音量比戳泡泡这些音效小很多，只当背景。
-  var STEP = 60 / 100 / 2;                       // 一个八分音符的秒数
+  // 全部由浏览器现场合成，不加载文件；音量比戳泡泡这些音效小很多，只当背景。大关卡里会快一点或慢一点。
   var CHORDS = {
     C: { bass: 48, tones: [60, 64, 67] }, Am: { bass: 45, tones: [60, 64, 69] }, F: { bass: 41, tones: [60, 65, 69] },
     G: { bass: 43, tones: [59, 62, 67] }, Em: { bass: 40, tones: [59, 64, 67] }, Dm: { bass: 38, tones: [62, 65, 69] }
@@ -908,13 +1693,8 @@ button { font: inherit; color: inherit; }
     osc.start(t); osc.stop(t + length + 0.02);
   }
   function shaker(t, volume) {
-    if (!music.noise) {
-      var length = Math.floor(audio.sampleRate * 0.2), buffer = audio.createBuffer(1, length, audio.sampleRate), data = buffer.getChannelData(0);
-      for (var i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
-      music.noise = buffer;
-    }
     var src = audio.createBufferSource(), filter = audio.createBiquadFilter(), gain = audio.createGain();
-    src.buffer = music.noise;
+    src.buffer = getNoise();
     filter.type = "highpass"; filter.frequency.value = 6000;
     gain.gain.setValueAtTime(volume, t);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
@@ -935,7 +1715,7 @@ button { font: inherit; color: inherit; }
     while (music.next < now + 0.15) {
       playStep(music.step, music.next);
       music.step = (music.step + 1) % (SONG.length * 8);
-      music.next += STEP;
+      music.next += 60 / musicBpm / 2;
     }
   }
   function startMusic() {
@@ -997,7 +1777,7 @@ button { font: inherit; color: inherit; }
     if (!soundOn) { soundOn = true; save("kids-pack-sound", "on"); showSound(); }
     unlockAudio();
   });
-  el("sweep").addEventListener("click", function () { unlockAudio(); sweep(); });
+  el("sweep").addEventListener("click", function () { unlockAudio(); if (game.mode === "normal" || game.mode === "level") sweep(); });
 
   // 全屏按钮：从主屏幕图标打开时本来就是全屏，不显示；浏览器里能全屏才显示。
   var root = document.documentElement;
@@ -1017,17 +1797,39 @@ button { font: inherit; color: inherit; }
   ["gesturestart", "gesturechange", "gestureend"].forEach(function (type) {
     document.addEventListener(type, function (event) { event.preventDefault(); }, { passive: false });
   });
-  document.addEventListener("touchmove", function (event) { event.preventDefault(); }, { passive: false });
+  document.addEventListener("touchmove", function (event) {
+    if (event.target && event.target.closest && event.target.closest(".book-card")) return;  // 贴纸本在小屏上可以上下滑
+    event.preventDefault();
+  }, { passive: false });
   document.addEventListener("dblclick", function (event) { event.preventDefault(); }, { passive: false });
   document.addEventListener("contextmenu", function (event) { event.preventDefault(); });
   document.addEventListener("touchend", unlockAudio, { passive: true }); // iPad 上声音要在手指抬起时解锁
+
+  // 只读的状态快照，给自动测试看（不能改游戏）。
+  window.kidsPackState = function () {
+    return {
+      mode: game.mode, levelNo: game.no, level: L ? L.key : null, packed: packed, trips: trips, nextLevel: nextLevel,
+      medals: JSON.parse(JSON.stringify(medals)), bookOpen: !el("book").hidden, right: RIGHT, floor: FLOOR,
+      truck: { state: truck.state, cap: truck.cap, kind: truck.kind, items: truck.items.length, x0: truck.x0 + truck.offset, w: truck.w },
+      L: L ? { t: L.t, count: L.count, goal: L.goal, time: L.time, extended: L.extended, wave: L.wave, recycled: L.recycled,
+        mischief: L.mischief, wetCount: L.wetCount, total: L.total, left: L.key === "boss" ? bossLeft() : null, goalDone: L.goalDone } : null,
+      stars: game.stars, belt: BELT,
+      puppy: puppy ? { x: puppy.x, state: puppy.state, inTruck: !!puppy.inTruck, carrying: !!puppy.carry } : null,
+      ball: !!ball,
+      boxes: boxes.filter(function (b) { return !b.gone; }).map(function (b) {
+        return { id: b.id, x: b.x, y: b.y, w: b.w, h: b.h, done: b.done, leaving: !!b.leaving, grounded: !!b.grounded, boss: !!b.boss,
+          wrapLeft: b.wrap ? b.wrap.filter(function (x) { return !x.popped; }).length : -1, soaked: !!b.soaked,
+          carried: !!b.carried, golden: !!b.golden, held: !!b.drag };
+      })
+    };
+  };
 
   // ---------------------------------------------------------------- 开始 ----
   var last = performance.now();
   function frame(now) {
     var dt = Math.min(0.033, Math.max(0, (now - last) / 1000));
     last = now;
-    step(dt);
+    if (el("book").hidden) step(dt);     // 打开贴纸本时游戏先停一下
     draw();
     requestAnimationFrame(frame);
   }
@@ -1036,12 +1838,17 @@ button { font: inherit; color: inherit; }
   showSound();
   showMusic();
   resize();
+  showTrip();
   truck.from = truck.w + 60 * K; truck.offset = truck.from;   // 一开始货车从右边开进来
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", function () { setTimeout(resize, 200); });
   for (var i = 0; i < 5; i++) spawn(RIGHT * (0.12 + i * 0.19));
   lastSpawn = performance.now();
   requestAnimationFrame(frame);
+
+  // 想直接玩某一关（家长试玩用）：网址后面加 ?level=1 到 ?level=5。
+  var askLevel = parseInt(new URLSearchParams(location.search).get("level"), 10);
+  if (askLevel >= 1 && askLevel <= 5) setTimeout(function () { startIntro(askLevel, true); }, 300);
 
   // 离线可用：装到主屏幕以后，没网也能打开。（直接双击打开本地文件时不需要。）
   if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
